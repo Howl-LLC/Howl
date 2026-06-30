@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>React to Latest</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="sdpi-wrapper">
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">Emoji</div>
+      <input class="sdpi-item-value" type="text" id="emoji-input" placeholder="Type or paste an emoji" maxlength="8">
+    </div>
+
+    <div class="section-heading">Quick Pick</div>
+    <div class="emoji-grid" id="emoji-grid"></div>
+  </div>
+
+  <script>
+    var websocket, uuid, actionInfo, currentSettings;
+
+    var COMMON_EMOJI = [
+      '👍', '❤️', '🎉', '😂', '🔥',
+      '😍', '😢', '😱', '🙏', '💯',
+      '✅', '❌', '👀', '🤔', '🌟',
+      '💤', '🌈', '🎊', '💥', '👎'
+    ];
+
+    function connectElgatoStreamDeckSocket(port, propertyInspectorUUID, registerEvent, info, inActionInfo) {
+      uuid = propertyInspectorUUID;
+      actionInfo = JSON.parse(inActionInfo);
+      currentSettings = actionInfo.payload.settings || {};
+
+      // Restore saved emoji
+      var emojiInput = document.getElementById('emoji-input');
+      if (currentSettings.emoji) {
+        emojiInput.value = currentSettings.emoji;
+      }
+
+      // Build emoji grid
+      buildEmojiGrid();
+
+      websocket = new WebSocket('ws://127.0.0.1:' + port);
+
+      websocket.addEventListener('open', function() {
+        websocket.send(JSON.stringify({ event: registerEvent, uuid: propertyInspectorUUID }));
+      });
+
+      websocket.addEventListener('message', function(ev) {
+        var m = JSON.parse(ev.data);
+        if (m.event === 'sendToPropertyInspector') {
+          // Could handle custom emoji list in the future
+        }
+      });
+    }
+
+    function setSettings(settings) {
+      currentSettings = settings;
+      websocket.send(JSON.stringify({
+        event: 'setSettings',
+        context: uuid,
+        payload: settings,
+      }));
+    }
+
+    function buildEmojiGrid() {
+      var grid = document.getElementById('emoji-grid');
+      COMMON_EMOJI.forEach(function(emoji) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = emoji;
+        btn.addEventListener('click', function() {
+          var input = document.getElementById('emoji-input');
+          input.value = emoji;
+          setSettings({ emoji: emoji });
+        });
+        grid.appendChild(btn);
+      });
+    }
+
+    // Event listeners
+    var debounceTimer;
+    document.getElementById('emoji-input').addEventListener('input', function() {
+      var val = this.value.trim();
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function() {
+        if (val) {
+          setSettings({ emoji: val });
+        }
+      }, 300);
+    });
+  </script>
+  <script src="./shared/pair-panel.js"></script>
+</body>
+</html>

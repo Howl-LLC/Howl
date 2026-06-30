@@ -1,0 +1,41 @@
+[extend]
+useDefault = true
+
+[allowlist]
+regexTarget = "line"
+regexes = [
+  # i18n option labels (e.g. poll durations) are not secrets.
+  '''labelKey: 'polls\.''',
+]
+paths = [
+  '''\.env\.example$''',
+  '''docs/''',
+  '''__tests__/''',
+  '''backend/tests/''',
+]
+
+[[rules]]
+id = "howl-jwt-secret"
+description = "Hardcoded JWT secret"
+regex = '''JWT_SECRET\s*=\s*['"][^'"]{8,}['"]'''
+path = '''\.ts$'''
+[rules.allowlist]
+paths = ['''\.env\.example$''', '''tests/helpers\.ts$''']
+
+[[rules]]
+id = "howl-encryption-key"
+description = "Hardcoded encryption key"
+regex = '''(?i)(encryption.key|mfa.encryption|aes.key)\s*=\s*['"][^'"]{8,}['"]'''
+path = '''\.ts$'''
+
+[[rules]]
+id = "howl-private-key-export"
+description = "Secret key being exported or returned from function"
+regex = '''(?i)(return|export).*secretKey'''
+path = '''\.ts$'''
+[rules.allowlist]
+regexTarget = "line"
+paths = ['''__tests__/''', '''tests/''']
+# Keypair *generators* return a freshly-generated {publicKey, secretKey} pair;
+# the `secretKey` here is a return-type annotation, not an exported constant.
+regexes = ['''generate\w*KeyPair''']

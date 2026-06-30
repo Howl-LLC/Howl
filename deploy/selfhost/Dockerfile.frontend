@@ -1,0 +1,17 @@
+# Build the Howl SPA for self-host, serve it via Caddy (auto-HTTPS + reverse proxy).
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json* ./
+# The root package's postinstall runs scripts/copy-mediapipe-assets.mjs, which npm
+# fires during `npm ci`. Copy that script in first or the install aborts with
+# MODULE_NOT_FOUND. The full tree (and a re-run via prebuild:frontend) follows below.
+COPY scripts ./scripts
+RUN npm ci
+COPY . .
+ENV VITE_SELF_HOST=true
+ENV VITE_SAME_ORIGIN=true
+RUN npm run build:frontend
+
+FROM caddy:2-alpine
+COPY --from=build /app/dist /srv
+COPY deploy/selfhost/Caddyfile /etc/caddy/Caddyfile

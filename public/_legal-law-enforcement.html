@@ -1,0 +1,199 @@
+<h1>Howl Law Enforcement Guidelines</h1>
+<p class="meta">Effective Date: March 1, 2026 · Last Updated: June 16, 2026</p>
+
+<p>These guidelines are intended for law enforcement officials and attorneys seeking information from Howl in connection with an investigation or legal proceeding. If you are not a law enforcement official or attorney, please see our <a href="/terms-of-service">Terms of Service</a> and <a href="/privacy-policy">Privacy Policy</a>.</p>
+<hr>
+
+<h2>1. Contact</h2>
+<p>All law enforcement requests and civil subpoenas should be directed to:</p>
+<p><strong>Email:</strong> <a href="mailto:support@howlpro.com">support@howlpro.com</a><br>
+<strong>Subject line:</strong> Include "Law Enforcement Request" (or "Civil Subpoena", "Preservation Request", "Emergency Disclosure Request", "DMCA Subpoena", or "Government Content Report" as applicable) and any case or reference number.<br>
+<strong>Mailing Address:</strong> Howl LLC, 30 N Gould St Ste N, Sheridan, WY 82801, USA.</p>
+<p>We respond to valid requests within <strong>10 business days</strong>. Emergency requests (Section 7) are prioritized.</p>
+
+<h2>2. Submission Requirements</h2>
+<p>To allow us to process your request efficiently, please include the following in your submission.</p>
+
+<h3>2.1 Identifiers</h3>
+<p>Identify the user account, server, channel, or message by Howl's internal identifier. Display names are not sufficient because they are not unique and can be changed.</p>
+<ul>
+  <li><strong>User account:</strong> Howl user ID (UUID format), or username combined with the registered email address.</li>
+  <li><strong>Server:</strong> Howl server ID (UUID format), or invite URL.</li>
+  <li><strong>Channel:</strong> Howl channel ID (UUID format), or channel name combined with the parent server ID.</li>
+  <li><strong>Message:</strong> Howl message ID (UUID format) or a direct link to the message.</li>
+</ul>
+
+<h3>2.2 Document Format</h3>
+<p>Legal process (subpoena, court order, search warrant, MLAT request, European Investigation Order) must be submitted as a non-editable PDF or on signed letterhead. Requests sent as editable documents may be delayed while we confirm authenticity.</p>
+
+<h3>2.3 Reference Number</h3>
+<p>On receipt of a valid preservation or legal-process submission, we assign an internal reference number (format <code>HOWL-######</code>). Please include this reference number on any follow-up communication or legal process relating to the same matter.</p>
+
+<h3>2.4 Language</h3>
+<p>Requests and legal process must be submitted in English, or accompanied by a certified or notarized English translation. Requests without an accompanying translation may be delayed.</p>
+
+<h2>3. Data Howl May Be Able to Provide</h2>
+<p>Depending on the type of legal process, Howl may be able to provide the following categories of data.</p>
+
+<h3>3.1 Basic Subscriber Information</h3>
+<ul>
+  <li>Username and discriminator.</li>
+  <li>Email address (encrypted at rest; can be decrypted for valid legal process).</li>
+  <li>Account creation date.</li>
+  <li>Last login timestamp.</li>
+  <li>IP address associated with account creation or recent login.</li>
+  <li>SSO provider linked (Google, Apple, Steam): identifier only.</li>
+</ul>
+
+<h3>3.2 Server and Channel Metadata</h3>
+<ul>
+  <li>Servers the user is a member of (name, ID, join date).</li>
+  <li>Channels the user has posted in.</li>
+  <li>Roles and permissions within servers.</li>
+</ul>
+
+<h3>3.3 Message Content (Server Channels)</h3>
+<ul>
+  <li>Messages sent in server text channels, including text, timestamps, and attachment URLs.</li>
+  <li>Message edit and deletion history (where retained).</li>
+</ul>
+
+<h3>3.4 Direct Message Metadata</h3>
+<ul>
+  <li>DM channel participants and timestamps.</li>
+  <li>Message timestamps and sender or recipient IDs.</li>
+</ul>
+
+<h3>3.5 Payment Information</h3>
+<ul>
+  <li>Stripe customer ID and subscription status.</li>
+  <li>Plan type and billing period.</li>
+  <li>We do not store credit card numbers. Contact Stripe directly for payment-card details.</li>
+</ul>
+
+<h3>3.6 Connection and Activity Logs</h3>
+<ul>
+  <li>IP addresses associated with sessions (retained for the session duration).</li>
+  <li>Audit log entries for server moderation actions (retained up to 90 days).</li>
+</ul>
+
+<h3>3.7 Certified Business Records</h3>
+<p>For court proceedings that require authenticated records, we can provide a certification of business records under Federal Rule of Evidence 902(11) (or the equivalent under state law or applicable foreign law). Include a written request for certification with your legal process and identify the specific records to be certified.</p>
+
+<h2>4. Data Howl Cannot Provide</h2>
+
+<h3>4.1 End-to-End Encrypted Direct Message Content</h3>
+<p>Direct messages and group direct messages on Howl are end-to-end encrypted using the Messaging Layer Security protocol (MLS, RFC 9420). Howl offers two key-recovery modes, and what we are able to provide depends on which mode the account uses.</p>
+<p>In <strong>Maximum Privacy mode</strong> (the default), encryption keys are generated and stored only on the user's devices, not on our servers. We can provide only ciphertext, which is unreadable without the user's keys, and we cannot decrypt this content.</p>
+<p>In <strong>Secure &amp; Easy mode</strong> (opt-in), Howl stores a backup of the user's encryption keys encrypted under a server-held key. For accounts in this mode, Howl may be able to derive the user's keys and decrypt their direct-message content when compelled by valid legal process combined with access to the account. Which recovery mode a given account uses may itself be available in response to valid legal process.</p>
+
+<h3>4.2 Passwords</h3>
+<p>User passwords are securely hashed using a one-way algorithm. We cannot retrieve or reverse a user's password.</p>
+
+<h3>4.3 Deleted Data</h3>
+<p>Once a user deletes their account, profile data is permanently removed and messages are anonymized. We cannot recover deleted data except where retained for legal compliance (for example, an active preservation order or a pending CSAM report).</p>
+
+<h2>5. Legal Process Requirements</h2>
+
+<h3>5.1 United States</h3>
+<table>
+  <thead><tr><th>Data Type</th><th>Required Legal Process</th></tr></thead>
+  <tbody>
+    <tr><td>Basic subscriber information</td><td>Valid subpoena (federal, state, or grand jury)</td></tr>
+    <tr><td>Server message content, metadata</td><td>Court order (18 U.S.C. § 2703(d)) or search warrant</td></tr>
+    <tr><td>DM metadata</td><td>Court order or search warrant</td></tr>
+    <tr><td>DM content (see Section 4.1)</td><td>Search warrant</td></tr>
+    <tr><td>Real-time interception</td><td>Wiretap order (Title III)</td></tr>
+    <tr><td>Pen register or trap-and-trace</td><td>Pen register order</td></tr>
+  </tbody>
+</table>
+<p>Disclosures are governed principally by the Stored Communications Act (18 U.S.C. § 2701 et seq.), the Pen Register Act (18 U.S.C. § 3121 et seq.), and Title III of the Omnibus Crime Control and Safe Streets Act (18 U.S.C. § 2510 et seq.). We respond to valid process issued under these statutes.</p>
+<p><strong>State-level process.</strong> We accept and respond to state-level subpoenas, search warrants, and court orders in addition to federal process. State process must be authorized under the issuing jurisdiction's laws and properly served or delivered as described in Section 1.</p>
+
+<h3>5.2 Civil Subpoenas</h3>
+<p>For civil subpoenas (subpoenas issued in private civil litigation, rather than by law enforcement), submit through the contact in Section 1 with the subject line "Civil Subpoena". Civil subpoenas should be served on Howl LLC's registered agent at the mailing address above. We require proper authentication (signed, on court-issued letterhead, and accompanied by the complaint or docket reference). We may object to civil subpoenas that are overly broad, seek privileged content, or fail to comply with the notice requirements of the Stored Communications Act. Howl does not provide expert-witness testimony or deposition attendance absent a court order compelling it.</p>
+
+<h3>5.3 International Requests</h3>
+<p>We accept requests from international law enforcement through:</p>
+<ul>
+  <li>Mutual Legal Assistance Treaty (MLAT) process via the U.S. Department of Justice.</li>
+  <li>Letters rogatory processed through appropriate legal channels.</li>
+  <li>Direct requests from countries with which the U.S. has an executive agreement under the CLOUD Act (where applicable).</li>
+</ul>
+<p>We evaluate each request for consistency with U.S. law and applicable international standards.</p>
+
+<h3>5.4 European Union</h3>
+<p>For EU-based investigations, we cooperate with competent authorities through:</p>
+<ul>
+  <li>Mutual Legal Assistance Treaty (MLAT).</li>
+  <li>European Investigation Orders (EIOs) issued under Directive 2014/41/EU.</li>
+  <li>Cross-border requests under the EU e-Evidence Regulation (Regulation 2023/1543), where applicable.</li>
+  <li>Notices under the EU Digital Services Act (Regulation 2022/2065), including Article 9 removal orders and Article 10 information orders (see Section 8).</li>
+  <li>Removal orders under the EU Terrorist Content Online Regulation (Regulation 2021/784).</li>
+</ul>
+
+<h3>5.5 United Kingdom</h3>
+<p>We accept requests from UK authorities under the UK Investigatory Powers Act 2016. Content removal requests under the UK Online Safety Act 2023, including trusted-flagger reports, are handled under Section 8 (Government Content Reports).</p>
+
+<h2>6. Preservation Requests</h2>
+<p>We will preserve account records for 90 days upon receipt of a valid preservation request from law enforcement. Preservation may be extended for an additional 90 days upon a renewed request. Preservation requests should include:</p>
+<ul>
+  <li>The specific user account(s) to be preserved (username, registered email, or user ID).</li>
+  <li>The relevant legal authority and case reference.</li>
+  <li>The categories of data to be preserved.</li>
+</ul>
+<p>Send preservation requests to <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject line "Preservation Request". We will respond with an internal reference number; please cite it on any follow-up legal process.</p>
+
+<h2>7. Emergency Requests</h2>
+<p>If there is an emergency involving imminent danger of death or serious physical injury, we may voluntarily disclose information to law enforcement without legal process, consistent with 18 U.S.C. § 2702(b)(8) and (c)(4).</p>
+<p>Emergency requests must include:</p>
+<ul>
+  <li>A description of the emergency and the nature of the threat.</li>
+  <li>The specific data requested and how it relates to the emergency.</li>
+  <li>The requesting officer's name, badge or ID number, agency, phone number, and email.</li>
+</ul>
+<p>Send emergency requests to <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject line "EMERGENCY DISCLOSURE REQUEST". We respond as quickly as possible, typically within hours.</p>
+
+<h2>8. Government Content Reports and Takedown Requests</h2>
+<p>Law enforcement and government authorities may refer allegedly illegal content on the Service to Howl for review. Send content reports to <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject line "Government Content Report" and include:</p>
+<ul>
+  <li>A description of the allegedly illegal content and its location (server, channel, message link, URL).</li>
+  <li>The legal basis for the report (the relevant statute, regulation, or court order).</li>
+  <li>The requesting authority's name, badge or ID number, agency, contact information, and case reference.</li>
+</ul>
+<p>We accept and review reports issued under:</p>
+<ul>
+  <li>The EU Digital Services Act (Regulation 2022/2065), Article 9 removal orders and Article 10 information orders.</li>
+  <li>The UK Online Safety Act 2023, including trusted-flagger reports.</li>
+  <li>The EU Terrorist Content Online Regulation (Regulation 2021/784).</li>
+  <li>Equivalent legal authority in other jurisdictions.</li>
+</ul>
+<p>We evaluate each report for legal validity and consistency with our Community Guidelines. Removal is not automatic; we exercise discretion subject to applicable law and user appeal rights under our Terms of Service.</p>
+
+<h2>9. Child Exploitation (CSAM)</h2>
+<p>Howl prioritizes minor safety and takes the following measures:</p>
+<ul>
+  <li><strong>Detection:</strong> We compute a perceptual hash (PDQ, multi-frame for animated images) on every server-side image upload — including channel attachments, avatars, banners, server icons, custom emojis, stickers, and forum-post images — and compare it against a flagged-hash database for rapid detection. We additionally compute a SHA-256 cryptographic hash on every non-encrypted upload regardless of media type, so that user-reported video and audio CSAM can carry a cross-provider exact-match hash to NCMEC even though we do not currently perceptually hash non-image media. End-to-end encrypted direct messages are excluded from server-side hashing because we cannot decrypt their contents; we act on those via in-app user reports that include cryptographic proof of the reported message.</li>
+  <li><strong>Versioned ingestion:</strong> Hash lists from NCMEC, Thorn, IWF, and other industry providers are ingested as immutable, atomically-swappable snapshots so a corrupt or partial corpus update cannot affect live matching.</li>
+  <li><strong>Evidence preserved at upload time:</strong> When a flagged-hash match blocks an upload, we preserve the file, the PDQ hash, the SHA-256, the upload-time IP address and user-agent, the uploader's username, email hash, and account creation timestamp, and the upload timestamp. This identity snapshot survives the user's later deletion of their account so that confirmed-CSAM evidence is preserved per 18 U.S.C. § 2258A(h).</li>
+  <li><strong>Reporting:</strong> We report identified CSAM to the <strong>National Center for Missing &amp; Exploited Children (NCMEC)</strong> via CyberTipline as required by 18 U.S.C. § 2258A. CyberTipline reports include the file, hashes (PDQ + SHA-256), upload-time IP+timestamp tuple, user-agent, account snapshot, and any platform action taken.</li>
+  <li><strong>Cooperation:</strong> We preserve and provide relevant evidence to NCMEC and, through NCMEC, to law enforcement.</li>
+</ul>
+<p>If you are investigating a CSAM case involving Howl, include the CyberTipline report number in your request. For direct CyberTipline-related correspondence, email <a href="mailto:support@howlpro.com">support@howlpro.com</a> with subject line <em>"NCMEC CyberTipline"</em>.</p>
+
+<h2>10. User Notification</h2>
+<p>Our policy is to notify users of law enforcement requests for their data before disclosing it, unless:</p>
+<ul>
+  <li>We are prohibited by law, court order, or legal process from providing notice (for example, a nondisclosure order under 18 U.S.C. § 2705(b)).</li>
+  <li>We believe notification would create a risk of harm, obstruct justice, or endanger any person.</li>
+  <li>The request relates to child exploitation or an active emergency-disclosure matter.</li>
+</ul>
+<p>If notification is initially delayed by a finite nondisclosure period, we will notify the user once the non-disclosure obligation has expired. We do not notify users of preservation requests or emergency-disclosure requests while active.</p>
+
+<h2>11. Cost Reimbursement</h2>
+<p>Howl may seek reimbursement for costs associated with responding to legal process, consistent with 18 U.S.C. § 2706 and applicable law. We will provide an estimate before processing, except for emergency requests.</p>
+
+<h2>12. Transparency</h2>
+<p>Howl publishes periodic transparency reports disclosing the number and types of requests received, subject to legal restrictions.</p>
+<hr>
+<p style="color: #475569; font-size: 0.8rem;"><em>These guidelines do not create any enforceable rights and are subject to change. All requests are evaluated on a case-by-case basis consistent with applicable law.</em></p>

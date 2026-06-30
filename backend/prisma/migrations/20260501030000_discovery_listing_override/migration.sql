@@ -1,0 +1,11 @@
+-- Adds an admin-only bypass flag for the four quantitative discovery-listing
+-- gates (age, members, sustained engagement, retention) plus the icon/
+-- description asset gates. Granted via POST /admin/servers/:id/grant-
+-- discovery-override. Community-mode safety prereqs (rules/MFA/automod) are
+-- NOT bypassed by this flag. Used for the official Howl server and other
+-- special-case listings; explicitly NOT a "verified servers grandfather in"
+-- mechanism (verified stays a pure trust badge).
+--
+-- Additive only: existing rows default to false (no override). Safe under
+-- concurrent writes per docs/PROTOCOL_CHANGES.md.
+ALTER TABLE "Server" ADD COLUMN "discoveryListingOverride" BOOLEAN NOT NULL DEFAULT false;

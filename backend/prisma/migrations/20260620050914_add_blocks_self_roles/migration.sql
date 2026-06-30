@@ -1,0 +1,11 @@
+-- Add ServerRole.blocksSelfRoles — a member holding ANY role with this flag
+-- cannot claim ANY self-role (server-enforced). Blocks NEW claims only; does
+-- NOT strip held roles.
+--
+-- NOTE: this migration was hand-trimmed. `prisma migrate diff` against the live
+-- DB also wanted to DROP the `search_vector` FTS columns/indexes on
+-- Message/DMMessage and rename MemberRole FK constraints — those are managed
+-- outside the Prisma schema (see migration 20260408213119_add_search_vectors)
+-- and must NOT be touched. When generating future migrations, use
+-- `--create-only` (or hand-author like this) and strip that drift.
+ALTER TABLE "ServerRole" ADD COLUMN     "blocksSelfRoles" BOOLEAN NOT NULL DEFAULT false;

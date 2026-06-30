@@ -1,0 +1,18 @@
+# AppArmor profile for Howl (Electron / Chromium).
+#
+# Required on Ubuntu 24.04+ where unprivileged user namespace creation is
+# restricted by default via `kernel.apparmor_restrict_unprivileged_userns=1`.
+# Without this profile, Chromium's sandbox refuses to start and the app
+# aborts with SIGABRT on launch.
+#
+# `flags=(unconfined)` means we do NOT confine the binary's other syscalls —
+# this is the electron-app convention (same as Discord, Signal, Obsidian).
+# The userns rule is what the kernel actually reads.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile howl /opt/Howl/howl flags=(unconfined) {
+  userns,
+
+  include if exists <local/howl>
+}

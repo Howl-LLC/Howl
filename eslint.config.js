@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Howl LLC
+import js from '@eslint/js';
+import tsPlugin from '@typescript-eslint/eslint-plugin';
+import tsParser from '@typescript-eslint/parser';
+import securityPlugin from 'eslint-plugin-security';
+import streamdeckConfig from './eslint.streamdeck.config.js';
+
+export default [
+  js.configs.recommended,
+  {
+    files: ['components/**/*.tsx', 'components/**/*.ts', 'services/**/*.ts', 'utils/**/*.ts', 'utils/**/*.tsx', 'contexts/**/*.ts', 'contexts/**/*.tsx', 'hooks/**/*.ts', '__tests__/**/*.ts', '__tests__/**/*.tsx', 'shared/**/*.ts', 'App.tsx', 'config.ts', 'types.ts', 'index.tsx', 'constants.tsx', 'src/**/*.ts', 'src/**/*.tsx'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        ecmaFeatures: { jsx: true },
+      },
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        localStorage: 'readonly',
+        sessionStorage: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearTimeout: 'readonly',
+        clearInterval: 'readonly',
+        navigator: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        Blob: 'readonly',
+        File: 'readonly',
+        FileReader: 'readonly',
+        FormData: 'readonly',
+        AbortController: 'readonly',
+        HTMLElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        HTMLTextAreaElement: 'readonly',
+        HTMLAudioElement: 'readonly',
+        HTMLVideoElement: 'readonly',
+        HTMLImageElement: 'readonly',
+        HTMLCanvasElement: 'readonly',
+        HTMLDivElement: 'readonly',
+        Image: 'readonly',
+        Audio: 'readonly',
+        MediaStream: 'readonly',
+        MediaRecorder: 'readonly',
+        Event: 'readonly',
+        KeyboardEvent: 'readonly',
+        MouseEvent: 'readonly',
+        DragEvent: 'readonly',
+        ClipboardEvent: 'readonly',
+        CustomEvent: 'readonly',
+        IntersectionObserver: 'readonly',
+        MutationObserver: 'readonly',
+        ResizeObserver: 'readonly',
+        RequestInit: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
+        Headers: 'readonly',
+        WebSocket: 'readonly',
+        Worker: 'readonly',
+        Notification: 'readonly',
+        performance: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly',
+        crypto: 'readonly',
+        atob: 'readonly',
+        btoa: 'readonly',
+        structuredClone: 'readonly',
+        queueMicrotask: 'readonly',
+        self: 'readonly',
+        React: 'readonly',
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+      security: securityPlugin,
+    },
+    rules: {
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-undef': 'off',
+
+      'security/detect-object-injection': 'off',
+      'security/detect-non-literal-regexp': 'warn',
+      'security/detect-eval-with-expression': 'error',
+      'security/detect-no-csrf-before-method-override': 'error',
+      'security/detect-possible-timing-attacks': 'warn',
+      'security/detect-pseudoRandomBytes': 'error',
+      'security/detect-unsafe-regex': 'error',
+      'security/detect-buffer-noassert': 'error',
+      'security/detect-child-process': 'warn',
+      'security/detect-disable-mustache-escape': 'error',
+      'security/detect-new-buffer': 'error',
+      'security/detect-bidi-characters': 'error',
+
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-new-func': 'error',
+      'no-script-url': 'error',
+      'prefer-const': 'warn',
+      'no-var': 'error',
+
+      'no-restricted-imports': ['error', {
+        paths: [
+          {
+            name: 'uiohook-napi',
+            message: 'uiohook-napi may only be required from electron/globalKeybinds.js (main process). Using it elsewhere risks exposing raw keystrokes.',
+          },
+        ],
+      }],
+    },
+  },
+  {
+    files: ['electron/**/*.js', '__tests__/globalKeybindsMapping.test.js'],
+    rules: { 'no-restricted-imports': 'off' },
+  },
+  streamdeckConfig,
+  {
+    ignores: ['dist/', 'node_modules/', 'release/', 'backend/', 'admin/', 'main.js', 'preload.js', 'scripts/', 'public/', '*.mjs', '*.d.ts', 'vite.config.ts', 'vitest.config.ts'],
+  },
+];

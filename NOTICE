@@ -1,0 +1,28 @@
+Howl
+Copyright (c) 2026 Howl LLC
+
+This product includes software developed by Howl LLC and the Howl contributors.
+
+Howl is licensed under the GNU Affero General Public License, version 3.0 only
+(AGPL-3.0-only). See the LICENSE file for the full license text.
+
+Contributions to this project are accepted under the Contributor License
+Agreement in CLA.md, which lets the project be offered under both the AGPL and,
+at the copyright holder's discretion, separate commercial terms.
+
+Third-party components
+----------------------
+
+- This repository bundles third-party open-source software. The in-product
+  Credits page (components/CreditsPage.tsx) lists each component with its author
+  and license; THIRD_PARTY_NOTICES.md carries additional source-form notices.
+- The bundled DeepFilterNet 3 (DFN3) noise-suppression assets carry their own
+  license and attribution in public/models/dfn3/NOTICE.md.
+- The bundled Google MediaPipe models (background segmentation and face
+  landmarks) carry their own license and attribution in
+  public/mediapipe/models/NOTICE.md.
+- The Caveat, Nunito, Orbitron, Pacifico, Playfair Display, and Press Start 2P
+  fonts under public/fonts/ are licensed under the SIL Open Font License 1.1
+  (see public/fonts/OFL.txt). The Clash Display and Satoshi fonts are licensed
+  under the ITF Free Font License and are fetched at build time rather than
+  redistributed in this repository (see scripts/fetch-fonts.mjs).

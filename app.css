@@ -1,0 +1,1627 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource/opendyslexic";
+@import "@fontsource/plus-jakarta-sans/400.css";
+@import "@fontsource/plus-jakarta-sans/500.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/700.css";
+
+/* ── Self-hosted Fontshare fonts (Clash Display + Satoshi) ── */
+
+@font-face {
+  font-family: 'Clash Display';
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/clash-display/ClashDisplay-Extralight.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Clash Display';
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/clash-display/ClashDisplay-Light.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Clash Display';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/clash-display/ClashDisplay-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Clash Display';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/clash-display/ClashDisplay-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Clash Display';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/clash-display/ClashDisplay-Semibold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Clash Display';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/clash-display/ClashDisplay-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/satoshi/Satoshi-Light.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Satoshi';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/satoshi/Satoshi-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Satoshi';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/satoshi/Satoshi-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Satoshi';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/satoshi/Satoshi-Bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Satoshi';
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/satoshi/Satoshi-Black.woff2') format('woff2');
+}
+
+@custom-variant dark (&:is(.dark *));
+@plugin "tailwindcss-animate";
+
+/* ── Theme Variable Contract ─────────────────────────────────
+ * Every [data-theme] block MUST define these variables.
+ * To add a new theme, copy a block and change the values.
+ *
+ * Backgrounds:   --bg-app, --bg-panel, --bg-sidebar, --bg-chat, --bg-input, --bg-floating, --bg-code, --bg-skeleton, --bg-skeleton-subtle
+ * Text:          --text-primary, --text-secondary, --text-tertiary, --text-on-accent, --text-faint
+ * Borders:       --border-subtle, --divider
+ * Accent:        --cyan-accent, --accent-glow
+ * Glass:         --glass-bg, --glass-border, --glass-shadow
+ * Overlays:      --overlay-backdrop, --spoiler-overlay
+ * Status:        --status-online, --status-idle, --status-dnd, --status-offline
+ *
+ * Derived (auto-computed in :root from above; no need to redefine):
+ *   --fill-hover, --fill-active, --fill-selected, --fill-selected-hover
+ *   --accent-subtle, --accent-muted, --accent-emphasis
+ *   --danger, --danger-subtle, --danger-muted
+ *   --success, --success-subtle, --success-muted
+ *   --warning, --warning-subtle, --warning-muted
+ *   --shadow-sm/md/lg/xl, --shadow-glow
+ * ──────────────────────────────────────────────────────────── */
+
+:root {
+    --bg-app: #0c0e13;
+    --bg-panel: rgba(20, 23, 30, 0.6);
+    --bg-sidebar: rgba(6, 8, 12, 0.85);
+    --bg-chat: rgba(12, 14, 19, 0.2);
+    --bg-statusbar: rgba(12, 14, 19, 0.2);
+    --bg-input: rgba(20, 23, 30, 0.5);
+    --bg-floating: #13161c;
+    /* Opaque surface for popovers / dropdowns (calendar, menus) that sit
+       over arbitrary backgrounds — must be dense enough to avoid bleed-through. */
+    --bg-elevated: rgba(18, 21, 28, 0.96);
+    --text-primary: #f1f5f9;
+    --text-secondary: rgba(241, 245, 249, 0.5);
+    --text-tertiary: rgba(241, 245, 249, 0.3);
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --cyan-accent: #076FA0;
+    --accent-glow: rgba(7, 111, 160, 0.35);
+    /* CTA fill — deep "logo blue" (matches the landing "Get Howl" button).
+       The custom theme overrides this with a darkened variant of the user's
+       accent via inline style (services/themeUtils.ts). */
+    --cta-bg: #02385A;
+    --glass-bg: rgba(14, 17, 24, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --spoiler-overlay: rgba(255, 255, 255, 0.88);
+    --overlay-backdrop: rgba(0,0,0,0.7);
+    --bg-code: rgba(255,255,255,0.03);
+    --bg-skeleton: rgba(255,255,255,0.06);
+    --bg-skeleton-subtle: rgba(255,255,255,0.04);
+    --text-on-accent: #f1f5f9;
+    --text-faint: rgba(255,255,255,0.35);
+    --status-online: #10b981;
+    --status-idle: #f59e0b;
+    --status-dnd: #ef4444;
+    --status-offline: #64748b;
+    --glass-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+    --divider: rgba(255,255,255,0.06);
+    --chat-font-size: 16px;
+    --chat-line-height: 1.5;
+    --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+    --scrollbar-thumb-active: rgba(255, 255, 255, 0.35);
+
+    /* ── Design System Tokens ──────────────────────────────── */
+    /* Interactive fills — adapt to light/dark via color-mix against --text-primary */
+    --fill-hover:          color-mix(in srgb, var(--text-primary) 6%, transparent);
+    --fill-active:         color-mix(in srgb, var(--text-primary) 10%, transparent);
+    --fill-strong:         color-mix(in srgb, var(--text-primary) 15%, transparent);
+    --fill-stronger:       color-mix(in srgb, var(--text-primary) 20%, transparent);
+    --border-strong:       color-mix(in srgb, var(--text-primary) 12%, transparent);
+    --fill-selected:       color-mix(in srgb, var(--cyan-accent) 10%, transparent);
+    --fill-selected-hover: color-mix(in srgb, var(--cyan-accent) 16%, transparent);
+
+    /* Accent opacity scale */
+    --accent-subtle:    color-mix(in srgb, var(--cyan-accent) 8%, transparent);
+    --accent-muted:     color-mix(in srgb, var(--cyan-accent) 15%, transparent);
+    --accent-emphasis:  color-mix(in srgb, var(--cyan-accent) 25%, transparent);
+
+    /* Semantic colors */
+    --danger:          #ef4444;
+    --danger-subtle:   color-mix(in srgb, #ef4444 10%, transparent);
+    --danger-muted:    color-mix(in srgb, #ef4444 20%, transparent);
+    --success:         #22c55e;
+    --success-subtle:  color-mix(in srgb, #22c55e 10%, transparent);
+    --success-muted:   color-mix(in srgb, #22c55e 20%, transparent);
+    --warning:         #f59e0b;
+    --warning-subtle:  color-mix(in srgb, #f59e0b 10%, transparent);
+    --warning-muted:   color-mix(in srgb, #f59e0b 20%, transparent);
+
+    /* Overlay / glass */
+    --overlay-backdrop: rgba(0, 0, 0, 0.6);
+    --glass-shadow:     0 8px 32px rgba(0, 0, 0, 0.5), 0 0 80px rgba(0, 0, 0, 0.4);
+    --text-on-accent:   #f1f5f9;
+
+    /* Elevation shadows */
+    --shadow-sm:   0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
+    --shadow-md:   0 4px 12px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.10);
+    --shadow-lg:   0 8px 24px rgba(0,0,0,0.25), 0 4px 8px rgba(0,0,0,0.15);
+    --shadow-xl:   0 12px 40px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.20);
+    --shadow-glow: 0 0 20px var(--accent-glow);
+
+    /* Z-index scale */
+    --z-sticky:    10;
+    --z-dropdown:  100;
+    --z-pip:       150;
+    --z-overlay:   200;
+    --z-modal:     300;
+    --z-popover:   400;
+    --z-toast:     500;
+    --z-tooltip:   600;
+    --z-max:       9999;
+
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.58 0.22 27);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.809 0.105 251.813);
+    --chart-2: oklch(0.623 0.214 259.815);
+    --chart-3: oklch(0.546 0.245 262.881);
+    --chart-4: oklch(0.488 0.243 264.376);
+    --chart-5: oklch(0.424 0.199 265.638);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+[data-theme='light'] {
+    /* Calm cool-grey light theme. Three deliberate moves vs. the old block:
+       (1) NO pure #fff on large surfaces — soft off-whites cut the glare;
+       (2) a clear luminance hierarchy — content/chat is the brightest "paper",
+           chrome (panels → canvas → sidebar) steps progressively greyer to
+           frame it, with firmer slate-tinted borders so panels actually read
+           as separate (fixes the washed-out/flat feel);
+       (3) darker text steps for legibility (secondary slate-500 → slate-600;
+           tertiary 0.3 → 0.55, which previously failed contrast). */
+    --bg-app: #e9edf2;
+    --bg-panel: #eef1f6;
+    --bg-sidebar: #e4e8ef;
+    --bg-chat: rgba(255, 255, 255, 0.8);
+    --bg-statusbar: rgba(255, 255, 255, 0.55);
+    --bg-input: #f6f8fb;
+    --bg-floating: #fbfcfe;
+    --bg-elevated: #fbfcfe;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-tertiary: rgba(15, 23, 42, 0.55);
+    --border-subtle: rgba(15, 23, 42, 0.12);
+    --cyan-accent: #076FA0;
+    --accent-glow: rgba(7, 111, 160, 0.10);
+    --glass-bg: rgba(248, 250, 252, 0.75);
+    --glass-border: rgba(15, 23, 42, 0.08);
+    --spoiler-overlay: rgba(0, 0, 0, 0.85);
+    --scrollbar-thumb: rgba(15, 23, 42, 0.18);
+    --scrollbar-thumb-hover: rgba(15, 23, 42, 0.28);
+    --scrollbar-thumb-active: rgba(15, 23, 42, 0.38);
+    --overlay-backdrop: rgba(15, 23, 42, 0.45);
+    --bg-code: rgba(15, 23, 42, 0.05);
+    --bg-skeleton: rgba(15, 23, 42, 0.07);
+    --bg-skeleton-subtle: rgba(15, 23, 42, 0.04);
+    --text-on-accent: #ffffff;
+    --text-faint: rgba(15, 23, 42, 0.40);
+    --status-online: #10b981;
+    --status-idle: #f59e0b;
+    --status-dnd: #ef4444;
+    --status-offline: #94a3b8;
+    --glass-shadow: 0 0 0 1px rgba(15,23,42,0.04) inset, 0 10px 30px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.06);
+    --divider: rgba(15, 23, 42, 0.08);
+}
+
+[data-theme='matter'] {
+    --bg-app: #212529;
+    --bg-panel: #1C1F23;
+    --bg-sidebar: #141618;
+    --bg-chat: rgba(33, 37, 41, 0.4);
+    --bg-statusbar: rgba(33, 37, 41, 0.4);
+    --bg-input: #161819;
+    --bg-floating: #2a2e33;
+    --bg-elevated: rgba(34, 38, 43, 0.97);
+    --text-primary: #e5e5e5;
+    --text-secondary: rgba(163, 163, 163, 0.95);
+    --text-tertiary: rgba(163, 163, 163, 0.6);
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --cyan-accent: #076FA0;
+    --accent-glow: rgba(7, 111, 160, 0.18);
+    --glass-bg: rgba(20, 22, 24, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --spoiler-overlay: rgba(255, 255, 255, 0.88);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+    --scrollbar-thumb-active: rgba(255, 255, 255, 0.35);
+    --overlay-backdrop: rgba(0,0,0,0.7);
+    --bg-code: rgba(255,255,255,0.03);
+    --bg-skeleton: rgba(255,255,255,0.06);
+    --bg-skeleton-subtle: rgba(255,255,255,0.04);
+    --text-on-accent: #f1f5f9;
+    --text-faint: rgba(255,255,255,0.3);
+    --status-online: #10b981;
+    --status-idle: #f59e0b;
+    --status-dnd: #ef4444;
+    --status-offline: #64748b;
+    --glass-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+    --divider: rgba(255,255,255,0.06);
+}
+
+[data-theme='void'] {
+    --bg-app: #161616;
+    --bg-panel: rgba(34, 34, 34, 0.92);
+    --bg-sidebar: rgba(18, 18, 18, 0.98);
+    --bg-chat: rgba(255, 255, 255, 0.02);
+    --bg-statusbar: rgba(255, 255, 255, 0.02);
+    --bg-input: #1e1e1e;
+    --bg-floating: #242424;
+    --bg-elevated: rgba(38, 38, 38, 0.98);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.55);
+    --text-tertiary: rgba(255, 255, 255, 0.35);
+    --border-subtle: rgba(255, 255, 255, 0.10);
+    --cyan-accent: #076FA0;
+    --accent-glow: rgba(7, 111, 160, 0.15);
+    --glass-bg: rgba(8, 8, 8, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --spoiler-overlay: rgba(255, 255, 255, 0.88);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.22);
+    --scrollbar-thumb-active: rgba(255, 255, 255, 0.32);
+    --overlay-backdrop: rgba(0,0,0,0.8);
+    --bg-code: rgba(255,255,255,0.02);
+    --bg-skeleton: rgba(255,255,255,0.05);
+    --bg-skeleton-subtle: rgba(255,255,255,0.03);
+    --text-on-accent: #f1f5f9;
+    --text-faint: rgba(255,255,255,0.3);
+    --status-online: #10b981;
+    --status-idle: #f59e0b;
+    --status-dnd: #ef4444;
+    --status-offline: #64748b;
+    --glass-shadow: 0 0 0 1px rgba(255,255,255,0.03) inset, 0 8px 32px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.5);
+    --divider: rgba(255,255,255,0.10);
+}
+
+[data-theme='custom'] {
+    --bg-app: #0c0e13;
+    --bg-panel: rgba(20, 23, 30, 0.6);
+    --bg-sidebar: rgba(6, 8, 12, 0.85);
+    --bg-chat: rgba(12, 14, 19, 0.2);
+    --bg-statusbar: rgba(12, 14, 19, 0.2);
+    --bg-input: rgba(20, 23, 30, 0.5);
+    --bg-floating: #13161c;
+    --bg-elevated: rgba(18, 21, 28, 0.96);
+    --text-primary: #f1f5f9;
+    --text-secondary: rgba(241, 245, 249, 0.5);
+    --text-tertiary: rgba(241, 245, 249, 0.3);
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --cyan-accent: #076FA0;
+    --accent-glow: rgba(7, 111, 160, 0.35);
+    /* CTA fill — deep "logo blue" (matches the landing "Get Howl" button).
+       The custom theme overrides this with a darkened variant of the user's
+       accent via inline style (services/themeUtils.ts). */
+    --cta-bg: #02385A;
+    --glass-bg: rgba(14, 17, 24, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --spoiler-overlay: rgba(255, 255, 255, 0.88);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+    --scrollbar-thumb-active: rgba(255, 255, 255, 0.35);
+    --overlay-backdrop: rgba(0,0,0,0.7);
+    --bg-code: rgba(255,255,255,0.03);
+    --bg-skeleton: rgba(255,255,255,0.06);
+    --bg-skeleton-subtle: rgba(255,255,255,0.04);
+    --text-on-accent: #f1f5f9;
+    --text-faint: rgba(255,255,255,0.35);
+    --status-online: #10b981;
+    --status-idle: #f59e0b;
+    --status-dnd: #ef4444;
+    --status-offline: #64748b;
+    --glass-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+    --divider: rgba(255,255,255,0.06);
+}
+
+/* ── Quick-text morph (voice channel chat overlay) ────────── */
+
+.quick-text-morph {
+  transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              height 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              border-radius 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.3s ease,
+              transform 0.15s ease;
+}
+
+.quick-text-panel-inner {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.quick-text-morph-open .quick-text-panel-inner {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.2s ease 0.12s;
+}
+
+/* ── Lexical Editor ──────────────────────────────────────── */
+
+.lexical-paragraph {
+  margin: 0;
+  min-height: 1.25em;
+}
+[data-lexical-editor] {
+  outline: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  cursor: text;
+}
+[data-lexical-editor][contenteditable="false"] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* Theme classes for future markdown highlighting (Pass 2) */
+.lexical-bold { font-weight: 700; }
+.lexical-italic { font-style: italic; }
+.lexical-underline { text-decoration: underline; }
+.lexical-strikethrough { text-decoration: line-through; }
+.lexical-code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  background: rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 0 4px;
+  font-size: 0.9em;
+}
+
+/* ── Landing Page Fonts & Animations ─────────────────────── */
+
+.font-clash {
+    font-family: 'Clash Display', 'Plus Jakarta Sans', sans-serif;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@keyframes slide-in-right {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+/* OTR tier-change directional slide (DM feed). JS gates by reduced-motion. */
+@keyframes otr-slide-from-right {
+    from { transform: translateX(20px); opacity: 0.5; }
+    to { transform: translateX(0); opacity: 1; }
+}
+@keyframes otr-slide-from-left {
+    from { transform: translateX(-20px); opacity: 0.5; }
+    to { transform: translateX(0); opacity: 1; }
+}
+.otr-slide-from-right { animation: otr-slide-from-right 180ms ease-out; }
+.otr-slide-from-left { animation: otr-slide-from-left 180ms ease-out; }
+
+/* Form error shake — used on wrong-passphrase, failed MFA input, etc. */
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    15% { transform: translateX(-6px); }
+    30% { transform: translateX(6px); }
+    45% { transform: translateX(-4px); }
+    60% { transform: translateX(4px); }
+    75% { transform: translateX(-2px); }
+    90% { transform: translateX(2px); }
+}
+
+.font-satoshi {
+    font-family: 'Satoshi', 'Plus Jakarta Sans', sans-serif;
+}
+
+/* ── Base Layout ──────────────────────────────────────────── */
+
+html, body {
+    margin: 0;
+    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+}
+
+#root {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+}
+
+body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease;
+}
+
+/* ── Scrollbar (hover-to-reveal, overlay-style) ──────────────────────────── */
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 12px;
+}
+
+/* Show scrollbar thumb on hover of the scrollable container */
+:hover::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+}
+:hover::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+:hover::-webkit-scrollbar-thumb:active {
+    background: var(--scrollbar-thumb-active);
+}
+
+/* Chromium overlay scrollbars — make the scrollbar float over content
+ * instead of reserving 6px of layout space on the right (like GitHub,
+ * Discord, Twitter). Without this, every `overflow-y-auto` container
+ * loses 6px of usable width and the chat scrollbar competes with edge-
+ * hugging UI (resize handles, chrome buttons, etc.) for clicks.
+ *
+ * `overflow: overlay` is non-standard — Chromium-only, gracefully
+ * ignored by Firefox / Safari (which then keep Tailwind's `auto` /
+ * `scroll`). On Firefox the thin native scrollbar already takes
+ * minimal space, so no extra work is needed there. We override
+ * Tailwind's overflow utilities at the same specificity so authors
+ * keep using them normally. */
+@supports (overflow: overlay) {
+    .overflow-auto      { overflow: overlay; }
+    .overflow-y-auto    { overflow-y: overlay; }
+    .overflow-x-auto    { overflow-x: overlay; }
+    .overflow-scroll    { overflow: overlay; }
+    .overflow-y-scroll  { overflow-y: overlay; }
+    .overflow-x-scroll  { overflow-x: overlay; }
+}
+
+/* Firefox fallback — thin scrollbar, shown on hover */
+@supports (scrollbar-color: auto) {
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: transparent transparent;
+    }
+    *:hover {
+        scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
+}
+
+/* ── Utility Classes ──────────────────────────────────────── */
+
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ── Accessibility ────────────────────────────────────────── */
+
+body.howl-reduced-motion, body.howl-reduced-motion * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+}
+
+body.howl-underline-links a { text-decoration: underline !important; }
+
+/* ── Accessibility: high-contrast mode (WCAG 1.4.3 / 1.4.11) ──────────
+   Theme-independent override applied at the <body> level, so it wins over
+   the [data-theme] token blocks (set on the document element) regardless of
+   the active theme. Forces a high-contrast palette: near-black surfaces,
+   pure-white primary text, strong opaque borders, and a brighter accent. */
+body.howl-high-contrast {
+    --bg-app: #000000;
+    --bg-elevated: #0a0c10;
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.92);
+    --text-tertiary: rgba(255, 255, 255, 0.85);
+    --text-faint: rgba(255, 255, 255, 0.80);
+    --text-on-accent: #ffffff;
+    --border-subtle: rgba(255, 255, 255, 0.50);
+    --border-strong: rgba(255, 255, 255, 0.70);
+    --glass-bg: rgba(0, 0, 0, 0.90);
+    --glass-border: rgba(255, 255, 255, 0.50);
+    --divider: rgba(255, 255, 255, 0.45);
+    --cyan-accent: #5cc2f0;
+    --status-offline: #94a3b8;
+    --scrollbar-thumb: rgba(255, 255, 255, 0.55);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.75);
+}
+
+body.howl-streamer-hide-info [data-personal-info] {
+    filter: blur(6px) !important;
+    pointer-events: none !important;
+    user-select: none !important;
+}
+body.howl-streamer-hide-invites [data-invite-link] {
+    filter: blur(6px) !important;
+    pointer-events: none !important;
+    user-select: none !important;
+}
+
+body.howl-no-autoplay-gifs img[src$=".gif"] {
+    animation-play-state: paused !important;
+}
+body.howl-no-animated-emoji .animated-emoji {
+    animation: none !important;
+}
+
+/* Sticker animation: always (default) — entrance scale-in */
+body[data-sticker-animation="always"] .howl-sticker-img {
+    animation: howl-sticker-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes howl-sticker-in {
+    from { opacity: 0; transform: scale(0.7); }
+    to   { opacity: 1; transform: scale(1); }
+}
+/* Sticker animation: on-interaction — static until hovered (GPU-friendly) */
+body[data-sticker-animation="on-interaction"] .howl-sticker-img {
+    opacity: 0.7;
+    transform: scale(0.9);
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+}
+body[data-sticker-animation="on-interaction"] .howl-sticker-img:hover {
+    opacity: 1;
+    transform: scale(1.05);
+    will-change: transform, opacity;
+}
+/* Sticker animation: never — no animation, static */
+body[data-sticker-animation="never"] .howl-sticker-img {
+    animation: none !important;
+    transition: none !important;
+}
+
+body.howl-onoff-indicators button[role="switch"] { overflow: visible; }
+body.howl-onoff-indicators button[role="switch"][aria-checked="true"]::after {
+    content: 'ON';
+    font-size: 7px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #0f172a;
+    pointer-events: none;
+}
+body.howl-onoff-indicators button[role="switch"][aria-checked="false"]::after {
+    content: 'OFF';
+    font-size: 7px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    position: absolute;
+    right: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgba(255, 255, 255, 0.5);
+    pointer-events: none;
+}
+
+body.howl-role-color-hidden [data-role-color] {
+    color: var(--text-primary) !important;
+    -webkit-text-fill-color: var(--text-primary) !important;
+    background: none !important;
+    -webkit-background-clip: unset !important;
+    background-clip: unset !important;
+}
+
+/* When saturation is reduced but custom role colors should be preserved */
+body.howl-sat-reducing:not(.howl-sat-custom-colors) [data-role-color] {
+    filter: saturate(var(--app-sat-inv, 1)) !important;
+}
+
+/* Streamer mode: suppress in-app notification strips */
+body.howl-streamer-no-notif [data-notification-strip] {
+    display: none !important;
+}
+
+body.howl-no-hw-accel * {
+    will-change: auto !important;
+    transform: none !important;
+    backface-visibility: visible !important;
+}
+
+/* ── Shape Masks ──────────────────────────────────────────── */
+
+/* `.squircle` shapes the server-rail icons + sidebar nav buttons. It now uses
+   the standard app corner radius (--radius-lg = 12px) so server icons match
+   the server folders and every other rounded surface in the app. The class
+   name is kept so we don't have to touch every call-site. */
+.squircle {
+    border-radius: var(--radius-lg);
+    outline: none;
+    box-shadow: none;
+}
+
+.hexagon { clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
+.cyber-glow { box-shadow: 0 0 20px var(--accent-glow); }
+
+/* ── Call-to-action button ───────────────────────────────────
+   Single source of truth for the "Get Howl" CTA. Fill is driven by
+   --cta-bg (deep logo-blue by default, the user's accent under the custom
+   theme), white text, radius 12, brighten + lift on hover. */
+.btn-cta {
+    background: var(--cta-bg, #02385A);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    transition: filter 0.15s ease, transform 0.15s ease;
+}
+.btn-cta:hover:not(:disabled):not([aria-disabled='true']) {
+    filter: brightness(1.12);
+    transform: translateY(-2px);
+}
+.btn-cta:active:not(:disabled):not([aria-disabled='true']) {
+    transform: translateY(0) scale(0.98);
+    filter: brightness(0.95);
+    transition-duration: 0.1s;
+}
+.btn-cta:focus-visible {
+    outline: 2px solid var(--cyan-accent);
+    outline-offset: 2px;
+}
+.btn-cta:disabled,
+.btn-cta[aria-disabled='true'] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Destructive sibling — same treatment, danger-red fill. Use for
+   delete / deactivate / reset and other irreversible actions so they
+   keep their warning colour while matching the CTA's weight. */
+.btn-cta-danger {
+    background: var(--danger);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    transition: filter 0.15s ease, transform 0.15s ease;
+}
+.btn-cta-danger:hover:not(:disabled):not([aria-disabled='true']) {
+    filter: brightness(1.1);
+    transform: translateY(-2px);
+}
+.btn-cta-danger:active:not(:disabled):not([aria-disabled='true']) {
+    transform: translateY(0) scale(0.98);
+    filter: brightness(0.95);
+    transition-duration: 0.1s;
+}
+.btn-cta-danger:focus-visible {
+    outline: 2px solid var(--danger);
+    outline-offset: 2px;
+}
+
+/* ── Accessibility: visible keyboard focus (WCAG 2.4.7) ──────────────
+   Global fallback focus ring for keyboard / assistive-tech navigation.
+   `:focus-visible` only matches keyboard focus, never mouse clicks, so it
+   adds no ring on pointer interaction. Elements with their own, more
+   specific `:focus-visible` rule (e.g. .btn-cta) keep their own styling.
+   The Lexical composer keeps its caret-based focus indication. */
+:focus-visible {
+    outline: 2px solid var(--cyan-accent);
+    outline-offset: 2px;
+}
+[data-lexical-editor]:focus-visible {
+    outline: none;
+}
+
+/* ── Accessibility: skip-to-content link (WCAG 2.4.1, Bypass Blocks) ──
+   Hidden off-screen until it receives keyboard focus, then it slides in at
+   the top-left and jumps focus past the server rail / channel sidebar to
+   #main-content. */
+.skip-link {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: var(--z-max, 9999);
+    margin: 8px;
+    padding: 10px 16px;
+    border-radius: var(--radius-lg, 12px);
+    background: var(--cyan-accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transform: translateY(-150%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+.btn-cta-danger:disabled,
+.btn-cta-danger[aria-disabled='true'] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Neutral solid, borderless - the secondary sibling of .btn-cta. Uses the
+   strong neutral fill so it reads as a real surface, not a hover ghost.
+   Theme-adaptive: the fill + text resolve from --text-primary per theme. */
+.btn-secondary {
+    background: var(--fill-strong);
+    color: var(--text-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    transition: background 0.15s ease, filter 0.15s ease, transform 0.15s ease;
+}
+.btn-secondary:hover:not(:disabled):not([aria-disabled='true']) {
+    background: var(--fill-stronger);
+    transform: translateY(-2px);
+}
+.btn-secondary:active:not(:disabled):not([aria-disabled='true']) {
+    transform: translateY(0) scale(0.98);
+    filter: brightness(0.97);
+    transition-duration: 0.1s;
+}
+.btn-secondary:focus-visible {
+    outline: 2px solid var(--cyan-accent);
+    outline-offset: 2px;
+}
+.btn-secondary:disabled,
+.btn-secondary[aria-disabled='true'] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Red-tinted solid, borderless - the soft destructive option (less weight
+   than the full-fill .btn-cta-danger). Tinted fill + danger-coloured label. */
+.btn-danger-soft {
+    background: var(--danger-muted);
+    color: var(--danger);
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    transition: background 0.15s ease, filter 0.15s ease, transform 0.15s ease;
+}
+.btn-danger-soft:hover:not(:disabled):not([aria-disabled='true']) {
+    filter: brightness(1.1);
+    transform: translateY(-2px);
+}
+.btn-danger-soft:active:not(:disabled):not([aria-disabled='true']) {
+    transform: translateY(0) scale(0.98);
+    filter: brightness(0.95);
+    transition-duration: 0.1s;
+}
+.btn-danger-soft:focus-visible {
+    outline: 2px solid var(--danger);
+    outline-offset: 2px;
+}
+.btn-danger-soft:disabled,
+.btn-danger-soft[aria-disabled='true'] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Selected state for single-select pickers / toggle grids — the CTA's
+   fill as a flat colour, without the lift (those belong to actionable
+   CTAs, not "this is the current choice" indicators). Apply to the
+   selected branch only; the unselected branch stays subtle. */
+.btn-cta-selected {
+    background: var(--cta-bg, #02385A);
+    color: #fff;
+    border-color: transparent;
+}
+
+/* ── Electron ─────────────────────────────────────────────── */
+
+.drag-region { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
+
+/* ── Keyframes ────────────────────────────────────────────── */
+
+@keyframes role-holographic {
+    0%, 100% { background-position: 0% center; }
+    50% { background-position: 100% center; }
+}
+
+@keyframes name-rainbow {
+    0% { background-position: 0% center; }
+    100% { background-position: 200% center; }
+}
+
+@keyframes name-shimmer {
+    0% { background-position: 200% center; }
+    100% { background-position: 0% center; }
+}
+
+@keyframes float-slow {
+    0%, 100% { transform: translate(0, 0); }
+    33% { transform: translate(30px, -20px); }
+    66% { transform: translate(-20px, 15px); }
+}
+
+/* ── Typing Indicator (slim bar above input) ─────────────── */
+
+@keyframes typing-dot {
+    0%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-3px); }
+}
+
+.typing-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background-color: var(--cyan-accent);
+    animation: typing-dot 1.4s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.16s; }
+.typing-dot:nth-child(3) { animation-delay: 0.32s; }
+
+/* ── Typing Pill Dots (status dot → pill morph) ─────────── */
+
+@keyframes typing-pill-bounce {
+    0%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-3px); }
+}
+
+.typing-pill-dot {
+    border-radius: 50%;
+    background-color: rgba(15, 23, 42, 0.85);
+    animation: typing-pill-bounce 1.4s ease-in-out infinite;
+}
+
+/* ── Spring Pop (context menus, popups) ─────────────────── */
+
+@keyframes spring-pop-in {
+    0% { opacity: 0; transform: scale(0.92); }
+    50% { opacity: 1; transform: scale(1.03); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+.spring-pop-in {
+    animation: spring-pop-in 0.18s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* ── Unread Badge Pop ────────────────────────────────────── */
+
+@keyframes badge-pop {
+    0% { transform: scale(0); }
+    70% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+
+.badge-pop {
+    animation: badge-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Jump-to-message highlight flash ─────────────────────── */
+/* Brief background pulse on the message a user just navigated to via search,
+   reply, pin, or cross-channel jump. Color comes from the user's selected
+   mention-highlight RGB (passed via the --mention-flash-rgb custom property). */
+
+@keyframes message-jump-flash {
+    0%   { background-color: rgba(var(--mention-flash-rgb), 0.30); }
+    20%  { background-color: rgba(var(--mention-flash-rgb), 0.30); }
+    100% { background-color: transparent; }
+}
+
+.message-flash {
+    animation: message-jump-flash 1.5s ease-out;
+}
+
+/* ── Settings Search Highlight ─────────────────────────────── */
+
+@keyframes setting-search-glow {
+    0%   { box-shadow: 0 0 0 2px rgba(7, 111, 160, 0.5), 0 0 12px 2px rgba(7, 111, 160, 0.2); }
+    50%  { box-shadow: 0 0 0 3px rgba(7, 111, 160, 0.3), 0 0 18px 4px rgba(7, 111, 160, 0.15); }
+    100% { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent; }
+}
+
+.setting-search-highlight {
+    animation: setting-search-glow 2s ease-out;
+    border-radius: 12px;
+}
+
+/* ── Reaction Pop (double-tap feedback) ──────────────────── */
+
+@keyframes reaction-pop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.3); }
+    100% { transform: scale(1); }
+}
+
+.reaction-pop {
+    animation: reaction-pop 0.3s ease-out;
+}
+
+/* ── Avatar Effects (Pro) ────────────────────────────────── */
+
+.avatar-effect-glow-cyan { box-shadow: 0 0 12px 3px rgba(7, 111, 160, 0.5), 0 0 24px 6px rgba(7, 111, 160, 0.2); }
+.avatar-effect-glow-purple { box-shadow: 0 0 12px 3px rgba(168, 85, 247, 0.5), 0 0 24px 6px rgba(168, 85, 247, 0.2); }
+.avatar-effect-glow-gold { box-shadow: 0 0 12px 3px rgba(234, 179, 8, 0.5), 0 0 24px 6px rgba(234, 179, 8, 0.2); }
+.avatar-effect-ring-animated {
+    position: relative;
+    z-index: 0;
+}
+/* Avatar effect classes intentionally OMIT `will-change`. The active animation
+   already opts each element into auto-GPU-promotion for the duration of the
+   animation; declaring `will-change` here would pin every visible Pro avatar
+   as a permanent compositing layer (member lists with N animated avatars =
+   N permanent GPU layers, big idle GPU drain). Same reasoning as the
+   `perf-glass-layer` comment further down. */
+.avatar-effect-ring-animated::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    border: 3px solid rgba(7, 111, 160, 0.6);
+    animation: avatar-ring-pulse 2s ease-in-out infinite;
+    pointer-events: none;
+}
+.avatar-effect-ring-rainbow {
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.6);
+    animation: avatar-ring-rainbow 3s linear infinite;
+}
+.avatar-effect-sparkle {
+    box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.3), 0 0 16px 4px rgba(7, 111, 160, 0.2);
+    animation: avatar-sparkle 2s ease-in-out infinite;
+}
+
+@keyframes avatar-ring-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.15); opacity: 0.5; }
+}
+
+@keyframes avatar-ring-rainbow {
+    0% { box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.6); }
+    25% { box-shadow: 0 0 0 3px rgba(254, 202, 87, 0.6); }
+    50% { box-shadow: 0 0 0 3px rgba(72, 219, 251, 0.6); }
+    75% { box-shadow: 0 0 0 3px rgba(255, 159, 243, 0.6); }
+    100% { box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.6); }
+}
+
+@keyframes avatar-sparkle {
+    0%, 100% { box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.3), 0 0 16px 4px rgba(7, 111, 160, 0.2); }
+    50% { box-shadow: 0 0 12px 4px rgba(255, 255, 255, 0.5), 0 0 24px 8px rgba(7, 111, 160, 0.3); }
+}
+
+/* New name effects */
+@keyframes name-neon-flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.7; }
+  94% { opacity: 1; }
+  97% { opacity: 0.8; }
+  98% { opacity: 1; }
+}
+
+@keyframes name-pulse-glow {
+  0%, 100% { text-shadow: 0 0 8px currentColor, 0 0 16px currentColor; opacity: 0.9; }
+  50% { text-shadow: 0 0 16px currentColor, 0 0 32px currentColor; opacity: 1; }
+}
+
+@keyframes name-gradient {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+/* New avatar effects */
+.avatar-effect-glow-rose { box-shadow: 0 0 12px 3px rgba(244, 114, 182, 0.5), 0 0 24px 6px rgba(244, 114, 182, 0.2); }
+.avatar-effect-glow-emerald { box-shadow: 0 0 12px 3px rgba(52, 211, 153, 0.5), 0 0 24px 6px rgba(52, 211, 153, 0.2); }
+
+.avatar-effect-ring-fire {
+  box-shadow: 0 0 12px 3px rgba(255, 69, 0, 0.5), 0 0 24px 6px rgba(255, 69, 0, 0.2);
+  animation: avatar-fire-flicker 1.5s ease-in-out infinite;
+}
+
+@keyframes avatar-fire-flicker {
+  0%, 100% { box-shadow: 0 0 12px 3px rgba(255, 69, 0, 0.5), 0 0 24px 6px rgba(255, 69, 0, 0.2); }
+  50% { box-shadow: 0 0 16px 5px rgba(255, 69, 0, 0.7), 0 0 32px 10px rgba(255, 69, 0, 0.3); }
+}
+
+.avatar-effect-breathe {
+  animation: avatar-breathe 3s ease-in-out infinite;
+}
+
+@keyframes avatar-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+.avatar-effect-shadow-neon {
+  box-shadow: 0 4px 20px rgba(7, 111, 160, 0.4), 0 0 0 2px rgba(7, 111, 160, 0.3);
+  animation: avatar-neon-flicker 4s infinite;
+}
+
+@keyframes avatar-neon-flicker {
+  0%, 100% { box-shadow: 0 4px 20px rgba(7, 111, 160, 0.4), 0 0 0 2px rgba(7, 111, 160, 0.3); }
+  92% { box-shadow: 0 4px 20px rgba(7, 111, 160, 0.4), 0 0 0 2px rgba(7, 111, 160, 0.3); }
+  93% { box-shadow: 0 4px 10px rgba(7, 111, 160, 0.2), 0 0 0 2px rgba(7, 111, 160, 0.15); }
+  94% { box-shadow: 0 4px 20px rgba(7, 111, 160, 0.4), 0 0 0 2px rgba(7, 111, 160, 0.3); }
+  97% { box-shadow: 0 4px 14px rgba(7, 111, 160, 0.3), 0 0 0 2px rgba(7, 111, 160, 0.2); }
+  98% { box-shadow: 0 4px 20px rgba(7, 111, 160, 0.4), 0 0 0 2px rgba(7, 111, 160, 0.3); }
+}
+
+/* ── Pro upsell shimmer badge ─────────────────────────────── */
+
+.pro-shimmer-badge {
+    position: relative;
+    overflow: hidden;
+}
+.pro-shimmer-badge::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        105deg,
+        transparent 30%,
+        rgba(7, 111, 160, 0.12) 45%,
+        rgba(7, 111, 160, 0.25) 50%,
+        rgba(7, 111, 160, 0.12) 55%,
+        transparent 70%
+    );
+    animation: pro-shimmer-sweep 3s ease-in-out infinite;
+    pointer-events: none;
+}
+@keyframes pro-shimmer-sweep {
+    0% { transform: translateX(-120%); }
+    40% { transform: translateX(120%); }
+    100% { transform: translateX(120%); }
+}
+
+/* ── No-scrollbar utility ─────────────────────────────────── */
+
+@utility no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+/* ── Design System Utilities ─────────────────────────────── */
+
+@utility glass {
+    background-color: var(--glass-bg);
+    border-color: var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(20px) saturate(1.3);
+    -webkit-backdrop-filter: blur(20px) saturate(1.3);
+}
+
+/* text-primary/secondary/accent conflict with shadcn theme colors —
+   use Tailwind theme mappings instead (text-t-primary, etc.) */
+@utility bg-panel { background-color: var(--bg-panel); }
+@utility bg-app-surface { background-color: var(--bg-app); }
+@utility bg-floating { background-color: var(--bg-floating); }
+@utility bg-input-surface { background-color: var(--bg-input); }
+@utility border-default { border-color: var(--border-subtle); }
+
+/* ── Mobile / Responsive ──────────────────────────────────── */
+
+:root {
+    --mobile-nav-height: 60px;
+}
+
+@media (max-width: 767px) {
+    :root {
+        --chat-font-size: 14px;
+        --chat-line-height: 1.45;
+    }
+    ::-webkit-scrollbar { width: 0; height: 0; }
+
+    /* Prevent iOS auto-zoom on input focus (triggers when font-size < 16px) */
+    input, select {
+        font-size: 16px !important;
+    }
+    /* Textarea gets 16px with matching line-height so the cursor stays aligned with text */
+    textarea {
+        font-size: 16px !important;
+        line-height: 1.4 !important;
+    }
+
+    /* Prevent modals/popups from overflowing viewport */
+    .fixed [class*="w-["],
+    .fixed [class*="max-w-"] {
+        max-width: calc(100vw - 1.5rem) !important;
+    }
+}
+
+/* Tablet typography */
+@media (min-width: 768px) and (max-width: 1023px) {
+    :root {
+        --chat-font-size: 15px;
+        --chat-line-height: 1.475;
+    }
+}
+
+/* Tablet: 768–1023px — two-column layout, no members sidebar */
+@media (min-width: 768px) and (max-width: 1023px) {
+    /* Hide the members sidebar on tablet — accessed via drawer instead */
+    .members-column-auto-hide { display: none !important; }
+}
+
+/* Prevent iOS background scroll bleed on modals/drawers */
+.fixed[class*="z-["] {
+    overscroll-behavior: contain;
+}
+
+/* Prevent horizontal scroll/swipe in chat on mobile touch devices */
+@media (pointer: coarse) {
+    [role="log"] {
+        overscroll-behavior-x: none;
+        overflow-x: hidden !important;
+        touch-action: pan-y pinch-zoom;
+    }
+}
+
+/* Universal responsive modal sizing — prevents overflow on small screens */
+.modal-responsive {
+    width: calc(100vw - 2rem);
+    max-width: var(--modal-max-w, 28rem); /* default sm (448px), override per modal */
+}
+@media (min-width: 640px) {
+    .modal-responsive {
+        width: auto;
+    }
+}
+
+/* Prevent iOS callout and text selection on long-press interactive elements */
+[oncontextmenu],
+button,
+[role="button"],
+[data-context-menu-trigger] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Allow text selection in message content and inputs */
+.message-content,
+textarea,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+[contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* Touch-friendly tap targets */
+@media (pointer: coarse) {
+    button, [role="button"], a {
+        min-height: 36px;
+        min-width: 36px;
+    }
+
+    /* Hide card resize handles on touch devices — cards are full-width on mobile */
+    .cursor-se-resize { display: none !important; }
+
+    /* Hide sidebar resize handle on touch — sidebar has its own mobile layout */
+    .cursor-col-resize { display: none !important; }
+
+    /* Larger touch targets for emoji picker tabs */
+    .emoji-tab-btn { padding: 0.625rem; /* p-2.5 = 10px */ }
+
+    /* Message action buttons — expand tap area without changing visual size */
+    .msg-action-btn {
+        width: 2.25rem;  /* 36px visual */
+        height: 2.25rem;
+        /* 44px tap area via padding on parent or touch-action */
+        padding: 0.25rem;
+    }
+
+    /* Modal close buttons — ensure 40px minimum */
+    .modal-close-btn {
+        min-width: 2.5rem;
+        min-height: 2.5rem;
+        padding: 0.5rem;
+    }
+}
+
+/* Prevent double-tap zoom on interactive elements */
+html {
+    touch-action: manipulation;
+}
+
+@supports (padding-top: env(safe-area-inset-top)) {
+    .safe-area-top { padding-top: env(safe-area-inset-top); }
+    .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+    .safe-area-left { padding-left: env(safe-area-inset-left); }
+    .safe-area-right { padding-right: env(safe-area-inset-right); }
+
+    /* Apply safe area insets to all fixed modal overlays */
+    .modal-safe-area {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+}
+
+/* ── iOS PWA Standalone Mode ──────────────────────────────── */
+@media (display-mode: standalone) {
+    html, body, #root {
+        height: 100%;
+    }
+
+    /* Safe area top for status bar area in standalone */
+    #root > div {
+        padding-top: env(safe-area-inset-top);
+    }
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.87 0.00 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.371 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.809 0.105 251.813);
+    --chart-2: oklch(0.623 0.214 259.815);
+    --chart-3: oklch(0.546 0.245 262.881);
+    --chart-4: oklch(0.488 0.243 264.376);
+    --chart-5: oklch(0.424 0.199 265.638);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    /* Howl theme text colors — use text-t-primary, text-t-secondary, text-t-accent */
+    --color-t-primary: var(--text-primary);
+    --color-t-secondary: var(--text-secondary);
+    --color-t-tertiary: var(--text-tertiary);
+    --color-t-accent: var(--cyan-accent);
+    --radius-sm: 12px;
+    --radius-md: 12px;
+    --radius-lg: 12px;
+    --radius-xl: 12px;
+    --radius-2xl: 12px;
+    --radius-3xl: 12px;
+    --radius-4xl: 12px;
+
+    /* Design system color tokens */
+    --color-fill-hover: var(--fill-hover);
+    --color-fill-active: var(--fill-active);
+    --color-fill-strong: var(--fill-strong);
+    --color-fill-stronger: var(--fill-stronger);
+    --color-border-strong: var(--border-strong);
+    --color-fill-selected: var(--fill-selected);
+    --color-fill-selected-hover: var(--fill-selected-hover);
+    --color-accent-subtle: var(--accent-subtle);
+    --color-accent-muted: var(--accent-muted);
+    --color-accent-emphasis: var(--accent-emphasis);
+    --color-danger: var(--danger);
+    --color-danger-subtle: var(--danger-subtle);
+    --color-danger-muted: var(--danger-muted);
+    --color-success: var(--success);
+    --color-success-subtle: var(--success-subtle);
+    --color-warning: var(--warning);
+    --color-warning-subtle: var(--warning-subtle);
+    --shadow-elevation-sm: var(--shadow-sm);
+    --shadow-elevation-md: var(--shadow-md);
+    --shadow-elevation-lg: var(--shadow-lg);
+    --shadow-elevation-xl: var(--shadow-xl);
+    --shadow-elevation-glow: var(--shadow-glow);
+    --color-overlay-backdrop: var(--overlay-backdrop);
+    --color-bg-code: var(--bg-code);
+    --color-bg-skeleton: var(--bg-skeleton);
+    --color-text-on-accent: var(--text-on-accent);
+    --color-text-faint: var(--text-faint);
+    --color-status-online: var(--status-online);
+    --color-status-idle: var(--status-idle);
+    --color-status-dnd: var(--status-dnd);
+    --color-status-offline: var(--status-offline);
+    --color-divider: var(--divider);
+    --animate-marquee: marquee var(--duration) infinite linear;
+    --animate-marquee-vertical: marquee-vertical var(--duration) linear infinite;
+    --animate-shine: shine var(--duration) infinite linear;
+  @keyframes marquee {
+  from {
+    transform: translateX(0);
+        }
+  to {
+    transform: translateX(calc(-100% - var(--gap)));
+        }
+    }
+  @keyframes marquee-vertical {
+  from {
+    transform: translateY(0);
+        }
+  to {
+    transform: translateY(calc(-100% - var(--gap)));
+        }
+    }
+  @keyframes shine {
+  0% {
+    background-position: 0% 0%;
+        }
+  50% {
+    background-position: 100% 100%;
+        }
+  to {
+    background-position: 0% 0%;
+        }
+    }
+  --animate-meteor: meteor 5s linear infinite;
+  --animate-ripple: ripple var(--duration,2s) ease calc(var(--i, 0)*.2s) infinite
+;
+  @keyframes meteor {
+  0% {
+    transform: rotate(var(--angle)) translateX(0);
+    opacity: 1;
+        }
+  70% {
+    opacity: 1;
+        }
+  100% {
+    transform: rotate(var(--angle)) translateX(-500px);
+    opacity: 0;
+        }
+    }
+  @keyframes ripple {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+        }
+  50% {
+    transform: translate(-50%, -50%) scale(0.9);
+        }
+    }}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
+
+/* ═══ Performance: CSS containment ═══ */
+/* Tells the browser that element internals can't affect layout outside */
+.perf-contain-strict { contain: strict; }
+.perf-contain-layout { contain: layout style paint; }
+.perf-contain-content { contain: content; }
+
+/* Skip ALL rendering work for hidden panels (layout, paint, compositing) */
+.perf-content-hidden {
+  content-visibility: hidden;
+  contain-intrinsic-size: auto 600px;
+}
+
+/* Glass elements live in their own compositing context so paints + scrolls
+   inside don't invalidate the wider page. We deliberately do NOT use
+   `will-change: backdrop-filter` here: browsers honor that as "this element
+   will animate" and pin it as a hot GPU layer permanently, which on dense
+   layouts (status bar + DM panel + ChatArea + MemberList + Sidebar all glass)
+   pegs the GPU even at idle. `isolation: isolate` plus paint containment
+   keeps the optimization without the always-hot cost — the browser still
+   auto-promotes when an animation actually needs it.
+   See https://developer.chrome.com/docs/lighthouse/performance/uses-passive-event-listeners/
+   and the Chromium issue tracker for `will-change` overuse. */
+.perf-glass-layer {
+  isolation: isolate;
+  contain: layout style;
+}
+
+/* Pause all animations — applied to <html> when app is hidden via JS */
+.perf-animations-paused *,
+.perf-animations-paused *::before,
+.perf-animations-paused *::after {
+  animation-play-state: paused !important;
+  transition-duration: 0s !important;
+}
+
+/* Voice speaking waveform — used by AudioLevelMeter (in-call tiles) and the
+   side-panel voice list. Picks up the active theme/custom accent via
+   var(--cyan-accent), so it retints automatically on theme change. */
+.howl-wf-bar {
+  display: inline-block;
+  background: var(--cyan-accent);
+  border-radius: 999px;
+  transform: scaleY(var(--howl-wf-low, 0.3));
+  transform-origin: center;
+  opacity: 0.55;
+  transition: opacity 140ms ease-out, height 160ms ease, border-radius 160ms ease, transform 160ms ease;
+}
+.howl-wf-bar--idle {
+  /* Idle = three equal round dots (same w == h), vertically centered.
+     The height is passed inline as --howl-wf-dot. */
+  height: var(--howl-wf-dot, 3px) !important;
+  border-radius: 50%;
+  transform: none;
+  align-self: center;
+}
+.howl-wf-bar--active {
+  opacity: 1;
+  animation: howl-wf-bounce 0.9s ease-in-out infinite;
+  animation-delay: var(--howl-wf-delay, 0s);
+}
+@keyframes howl-wf-bounce {
+  0%, 100% { transform: scaleY(var(--howl-wf-low, 0.3)); }
+  50%      { transform: scaleY(var(--howl-wf-high, 1)); }
+}
+/* Intentionally NOT pausing .howl-wf-bar--active when the window is
+   unfocused — users running Howl on a second monitor / next to a game
+   still need to see who's talking. The animation is a pure CSS transform
+   on the compositor thread, so the perf cost is negligible. */
+
+/* Fullscreen video — force viewport sizing so the native fullscreen button
+   renders correctly on attached video previews in chat. */
+video:fullscreen,
+video:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  object-fit: contain !important;
+  background: #000;
+}
+:fullscreen::backdrop,
+:-webkit-full-screen::backdrop {
+  background: #000;
+}
+
+/* ── Call UI Unification ─────────────────────────────────────── */
+
+/* Inline call surface — blends with the DM/group chat surface it sits
+   above. Uses the same --bg-chat token as the chat pane (≈0.2–0.4 alpha
+   across themes) rather than --glass-bg (0.68–0.72 alpha) so the call
+   area no longer reads as a distinct frosted block hovering over the
+   chat. Backdrop blur softens the underlying page without lifting the
+   surface visually. */
+.glass-call-area {
+  background: var(--bg-chat);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  /* Isolate the call grid's compositing context so video frames inside
+     don't force the chat scaffolding below to recomposite each frame. */
+  isolation: isolate;
+  contain: layout style paint;
+}
+
+/* Ringing avatar: expanding-ring ripple applied to the avatar's ring div
+   in ParticipantCardFooter when connectionState === 'ringing'. */
+@keyframes howl-ringing-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(7, 111, 160, 0.55); }
+  70%  { box-shadow: 0 0 0 14px rgba(7, 111, 160, 0); }
+  100% { box-shadow: 0 0 0 14px rgba(7, 111, 160, 0); }
+}
+.howl-ringing-avatar {
+  animation: howl-ringing-pulse 1.4s ease-out infinite;
+  border-radius: 9999px;
+}

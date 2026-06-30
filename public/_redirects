@@ -1,0 +1,24 @@
+# Cloudflare Pages SPA redirects for Howl
+
+# Ads authorization
+/ads.txt          /ads.txt           200
+
+# Don't let the SPA catch-all swallow missing hashed assets. When a user has
+# a stale index.html cached (from a prior deploy) that references an asset
+# hash Vite has since rotated, the browser requests e.g.
+# `/assets/js/HomeView-<oldhash>.js`. Without this rule the catch-all below
+# returns index.html with status 200, the browser gets HTML under a
+# `Content-Type: text/html` header for a JS module request, and we see the
+# "Failed to load module script: Expected a JavaScript module script but the
+# server responded with a MIME type of 'text/html'" error. Returning 404
+# instead lets the browser fail cleanly and surfaces the staleness (a hard
+# refresh reloads the current HTML referencing the correct hashes).
+/assets/*         /assets/:splat     404
+
+# Stream Deck landing page — serve /streamdeck from public/streamdeck/index.html
+# rather than falling through to the SPA catch-all.
+/streamdeck       /streamdeck/index.html    200
+/streamdeck/      /streamdeck/index.html    200
+
+# SPA catch-all: all other routes serve index.html (React Router handles them)
+/*    /index.html    200

@@ -1,0 +1,52 @@
+/* Overlay-specific styles — kept minimal for performance.
+   No external font imports — the main app bundles Inter/Geist as woff2 assets,
+   but the overlay runs in a separate BrowserWindow with a restrictive CSP.
+   We rely on system-ui (which closely matches Inter on modern OSes). */
+
+:root {
+  --ov-cyan: #076FA0;
+  --ov-glow: rgba(7, 111, 160, 0.25);
+  --ov-glass: rgba(6, 10, 22, 0.7);
+  --ov-glass-border: rgba(255, 255, 255, 0.05);
+  --ov-t1: #f1f5f9;
+  --ov-t2: rgba(241, 245, 249, 0.45);
+  --ov-t3: rgba(241, 245, 249, 0.25);
+  --ov-danger: #ef4444;
+  --ov-success: #22c55e;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #overlay-root {
+  background: transparent;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: var(--ov-t1);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Toast slide-in animation — GPU-accelerated */
+@keyframes ov-slide-in {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes ov-slide-out {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(20px); opacity: 0; }
+}
+.ov-toast-enter { animation: ov-slide-in 0.2s ease-out forwards; }
+.ov-toast-exit { animation: ov-slide-out 0.15s ease-in forwards; }
+
+/* Locked overlay fade */
+@keyframes ov-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.ov-locked-enter { animation: ov-fade-in 0.15s ease-out forwards; }
+
+/* Scrollbar for server rail + messages */
+.ov-scroll::-webkit-scrollbar { width: 4px; }
+.ov-scroll::-webkit-scrollbar-track { background: transparent; }
+.ov-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
+.ov-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.12); }

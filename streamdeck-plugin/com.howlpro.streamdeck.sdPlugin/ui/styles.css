@@ -1,0 +1,147 @@
+/* Howl Stream Deck Property Inspector — shared styles */
+body {
+  margin: 0;
+  padding: 8px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  color: #e5e7eb;
+  background: #1f2937;
+}
+
+.sdpi-wrapper {
+  padding: 4px 0;
+}
+
+.sdpi-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+
+.sdpi-item-label {
+  min-width: 80px;
+  color: #9ca3af;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sdpi-item-value {
+  flex: 1;
+  background: #111827;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+select.sdpi-item-value {
+  appearance: auto;
+  cursor: pointer;
+}
+
+.sdpi-item-value:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+
+input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Radio group */
+.sdpi-item-value.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.sdpi-item-value.radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.sdpi-item-value.radio-group label:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sdpi-item-value.radio-group input[type="radio"] {
+  accent-color: #3b82f6;
+  margin: 0;
+}
+
+/* Emoji quick-pick grid */
+.emoji-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.emoji-grid button {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.emoji-grid button:hover {
+  background: #1e293b;
+  border-color: #3b82f6;
+}
+
+/* Status indicator */
+.status-msg {
+  color: #6b7280;
+  font-size: 11px;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.status-msg.error {
+  color: #ef4444;
+}
+
+/* Info note */
+.info-note {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: #93c5fd;
+  line-height: 1.4;
+}
+
+/* Section heading */
+.section-heading {
+  color: #6b7280;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin: 12px 0 6px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #374151;
+}

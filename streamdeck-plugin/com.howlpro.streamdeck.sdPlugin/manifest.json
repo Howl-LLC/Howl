@@ -1,0 +1,299 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.howlpro.streamdeck",
+  "Name": "Howl",
+  "Author": "Howl",
+  "Version": "1.0.3.0",
+  "Description": "Control voice, calls, reactions, and more from your Elgato Stream Deck.",
+  "URL": "https://app.howlpro.com/streamdeck",
+  "CodePath": "bin/plugin.js",
+  "SDKVersion": 2,
+  "Icon": "imgs/plugin",
+  "CategoryIcon": "imgs/category",
+  "Category": "Howl",
+  "Nodejs": {
+    "Version": "20"
+  },
+  "OS": [
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    },
+    {
+      "Platform": "mac",
+      "MinimumVersion": "13"
+    }
+  ],
+  "Software": {
+    "MinimumVersion": "6.7"
+  },
+  "Actions": [
+    {
+      "UUID": "com.howlpro.streamdeck.voice.mute",
+      "Name": "Mute",
+      "Icon": "imgs/actions/voice-mute/icon",
+      "Tooltip": "Toggle microphone mute",
+      "States": [
+        {
+          "Image": "imgs/actions/voice-mute/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.voice.deafen",
+      "Name": "Deafen",
+      "Icon": "imgs/actions/voice-deafen/icon",
+      "Tooltip": "Toggle audio output mute",
+      "States": [
+        {
+          "Image": "imgs/actions/voice-deafen/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.voice.ptt",
+      "Name": "Push to Talk",
+      "Icon": "imgs/actions/voice-ptt/icon",
+      "Tooltip": "Hold to talk (press-and-hold key)",
+      "States": [
+        {
+          "Image": "imgs/actions/voice-ptt/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.voice.camera",
+      "Name": "Camera",
+      "Icon": "imgs/actions/voice-camera/icon",
+      "Tooltip": "Toggle camera on/off",
+      "States": [
+        {
+          "Image": "imgs/actions/voice-camera/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.voice.hangup",
+      "Name": "Hang Up",
+      "Icon": "imgs/actions/voice-hangup/icon",
+      "Tooltip": "Leave voice channel or end call",
+      "States": [
+        {
+          "Image": "imgs/actions/voice-hangup/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.voice.switch-channel",
+      "Name": "Switch Voice Channel",
+      "Icon": "imgs/actions/voice-switch-channel/icon",
+      "Tooltip": "Jump to a specific voice channel",
+      "PropertyInspectorPath": "ui/voice-switch-channel.html",
+      "States": [
+        {
+          "Image": "imgs/actions/voice-switch-channel/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.voice.device-switcher",
+      "Name": "Cycle Audio Device",
+      "Icon": "imgs/actions/voice-device-switcher/icon",
+      "Tooltip": "Cycle through available audio devices",
+      "PropertyInspectorPath": "ui/voice-device-switcher.html",
+      "States": [
+        {
+          "Image": "imgs/actions/voice-device-switcher/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.call.answer",
+      "Name": "Answer Call",
+      "Icon": "imgs/actions/call-answer/icon",
+      "Tooltip": "Accept incoming DM call",
+      "States": [
+        {
+          "Image": "imgs/actions/call-answer/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.call.decline",
+      "Name": "Decline Call",
+      "Icon": "imgs/actions/call-decline/icon",
+      "Tooltip": "Decline incoming DM call",
+      "States": [
+        {
+          "Image": "imgs/actions/call-decline/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.call.end",
+      "Name": "End Call",
+      "Icon": "imgs/actions/call-end/icon",
+      "Tooltip": "End the active call",
+      "States": [
+        {
+          "Image": "imgs/actions/call-end/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.presence.rotate",
+      "Name": "Cycle Status",
+      "Icon": "imgs/actions/presence-rotate/icon",
+      "Tooltip": "Cycle online / idle / DND / invisible",
+      "States": [
+        {
+          "Image": "imgs/actions/presence-rotate/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.presence.set",
+      "Name": "Set Status",
+      "Icon": "imgs/actions/presence-set/icon",
+      "Tooltip": "Set a specific status",
+      "PropertyInspectorPath": "ui/presence-set.html",
+      "States": [
+        {
+          "Image": "imgs/actions/presence-set/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.reaction.react-focused",
+      "Name": "React to Latest",
+      "Icon": "imgs/actions/reaction-react-focused/icon",
+      "Tooltip": "React to the latest message in the active channel",
+      "PropertyInspectorPath": "ui/reaction-react-focused.html",
+      "States": [
+        {
+          "Image": "imgs/actions/reaction-react-focused/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.channel.switch",
+      "Name": "Switch Channel",
+      "Icon": "imgs/actions/channel-switch/icon",
+      "Tooltip": "Jump to a specific channel",
+      "PropertyInspectorPath": "ui/channel-switch.html",
+      "States": [
+        {
+          "Image": "imgs/actions/channel-switch/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.dm.open-pinned",
+      "Name": "Open DM",
+      "Icon": "imgs/actions/dm-open-pinned/icon",
+      "Tooltip": "Open DM with a specific user",
+      "PropertyInspectorPath": "ui/dm-open-pinned.html",
+      "States": [
+        {
+          "Image": "imgs/actions/dm-open-pinned/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.thread.start-from-focused",
+      "Name": "Start Thread",
+      "Icon": "imgs/actions/thread-start-from-focused/icon",
+      "Tooltip": "Start a thread from the latest message",
+      "States": [
+        {
+          "Image": "imgs/actions/thread-start-from-focused/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.thread.lock-toggle",
+      "Name": "Toggle Thread Lock",
+      "Icon": "imgs/actions/thread-lock-toggle/icon",
+      "Tooltip": "Lock or unlock the focused thread (moderator)",
+      "States": [
+        {
+          "Image": "imgs/actions/thread-lock-toggle/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.stage.start-end",
+      "Name": "Start/End Stage",
+      "Icon": "imgs/actions/stage-start-end/icon",
+      "Tooltip": "Start or end the stage in the current voice channel",
+      "States": [
+        {
+          "Image": "imgs/actions/stage-start-end/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.stage.remove-speaker",
+      "Name": "Remove Speaker",
+      "Icon": "imgs/actions/stage-remove-speaker/icon",
+      "Tooltip": "Remove a speaker from the stage",
+      "PropertyInspectorPath": "ui/stage-remove-speaker.html",
+      "States": [
+        {
+          "Image": "imgs/actions/stage-remove-speaker/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    },
+    {
+      "UUID": "com.howlpro.streamdeck.indicator.unread-summary",
+      "Name": "Unread Summary",
+      "Icon": "imgs/actions/indicator-unread-summary/icon",
+      "Tooltip": "Jump to next unread",
+      "States": [
+        {
+          "Image": "imgs/actions/indicator-unread-summary/key",
+          "TitleAlignment": "bottom",
+          "FontSize": 9
+        }
+      ]
+    }
+  ]
+}

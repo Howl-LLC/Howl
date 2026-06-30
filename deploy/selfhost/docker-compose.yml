@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: howl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: howl
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U howl -d howl"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      # redis-cli (used only by the healthcheck) auto-reads REDISCLI_AUTH.
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      WEB_CONCURRENCY: "1"
+      # The bundled Postgres is reachable only over the internal compose network
+      # and serves no TLS, so disable the backend↔DB SSL that production enables by
+      # default (db.ts: useSsl = DB_SSL === 'false' ? false : isProduction).
+      DB_SSL: "false"
+      DATABASE_URL: postgresql://howl:${POSTGRES_PASSWORD}@postgres:5432/howl
+      DIRECT_URL: postgresql://howl:${POSTGRES_PASSWORD}@postgres:5432/howl
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      FRONTEND_ORIGIN: https://${DOMAIN}
+      PUBLIC_URL: https://${DOMAIN}
+      WEBAUTHN_RP_ID: ${DOMAIN}
+      WEBAUTHN_ORIGIN: https://${DOMAIN}
+    volumes:
+      # The app resolves its uploads dir relative to the compiled module, which lands
+      # at /app/dist/uploads at runtime — mount the volume there (see backend/Dockerfile).
+      - uploads:/app/dist/uploads
+      # GDPR data exports are written to <cwd>/exports = /app/exports (EXPORTS_DIR).
+      - exports:/app/exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # Probe the DB-backed health route instead of the always-200 /health the
+    # shared Dockerfile uses, so `docker compose ps` reports unhealthy when
+    # Postgres is unreachable. start_period covers first-boot migrations.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 2048
+
+  caddy:
+    build:
+      context: ../..
+      dockerfile: deploy/selfhost/Dockerfile.frontend
+    environment:
+      DOMAIN: ${DOMAIN}
+      BACKEND_UPSTREAM: backend:5000
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 512
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+  exports:
+  caddydata:
+  caddyconfig:

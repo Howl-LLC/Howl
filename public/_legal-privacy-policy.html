@@ -1,0 +1,293 @@
+<h1>Howl Privacy Policy</h1>
+<p class="meta">Effective Date: March 4, 2026 · Last Updated: June 16, 2026</p>
+<p>This Privacy Policy describes how Howl LLC ("Howl," "we," "us," "our") collects, uses, stores, and protects your personal information when you use the Howl platform, including our website, desktop application, mobile application, and all related services (the "Service"). By using the Service, you agree to the practices described in this policy.</p>
+<p>If you have questions, contact us at <a href="mailto:support@howlpro.com">support@howlpro.com</a>.</p>
+<hr>
+
+<h2>1. Information We Collect</h2>
+<h3>1.1 Information You Provide</h3>
+<ul>
+  <li><strong>Account information:</strong> Username, email address, password (securely hashed; we never store your password in plain text), and date of birth (used for age verification; see Section 10).</li>
+  <li><strong>Profile information:</strong> Display name, avatar image, banner image, status text, and accent color.</li>
+  <li><strong>Phone number:</strong> If you enable SMS two-factor authentication, we store your phone number (encrypted at rest). We use it only to send MFA codes.</li>
+  <li><strong>Payment information:</strong> If you purchase a subscription, payment is processed by Stripe. We store your Stripe customer ID and subscription status but never see or store your full card number. See <a href="https://stripe.com/privacy">Stripe's Privacy Policy</a>.</li>
+  <li><strong>User content:</strong> Messages, images, files, and other content you send through servers and direct messages.</li>
+  <li><strong>Communication preferences:</strong> Notification settings, privacy settings, language preference, and accessibility preferences.</li>
+  <li><strong>Push notification subscriptions:</strong> If you enable push notifications, we store the subscription endpoint and cryptographic keys required to deliver notifications to your device. We do not receive delivery or interaction data from push services about individual notifications.</li>
+</ul>
+
+<h3>1.2 Information Collected Automatically</h3>
+<ul>
+  <li><strong>Usage data:</strong> Features you use, servers you join, channels you visit, and timestamps of activity. We use this to provide the Service (for example, showing online status), not for advertising or profiling.</li>
+  <li><strong>Presence and activity indicators:</strong> Your online status (online, idle, do-not-disturb, offline). If you enable linked-account activity sharing (Spotify listening status, game presence, Twitch streaming, custom status), those activity indicators are shared with your contacts according to your Settings. You control which accounts you link and what activity, if any, is shared.</li>
+  <li><strong>Device and connection data:</strong> IP address (for rate limiting, security, and abuse prevention), browser or client type, operating system, and device identifiers provided by Electron or your browser. The Electron desktop application periodically checks for updates by requesting a version manifest from our release server, which receives your IP address and client version. We store a truncated, salted hash of your IP on every login session to detect new-device sign-ins. We additionally store the raw IP address and full user-agent string on each session record for up to 90 days of inactivity for security and abuse-prevention investigations; both are then automatically nulled out. See Section 7 for retention details.</li>
+  <li><strong>Upload safety hashing:</strong> When you upload an image, we compute a perceptual hash (PDQ) and a SHA-256 cryptographic hash of the image on our servers. Animated images (GIF, animated WebP, AVIF) are sampled at multiple frames so abuse cannot hide on a non-first frame. For non-image uploads (video, audio, documents), we compute a SHA-256 only. The PDQ hash is compared against a database of known harmful content (for example, child sexual abuse material) to block illegal uploads; SHA-256 is retained so that, if a file is later identified as illegal content, we can include the cross-provider exact-match hash in our reports to NCMEC and similar bodies. All hashing runs on our infrastructure, in memory, from the validated upload bytes; no upload data is sent to a third party for this purpose. End-to-end encrypted direct messages are excluded from this scanning because we cannot decrypt their contents.</li>
+  <li><strong>Error reports:</strong> If you consent, we collect crash reports and performance data via Sentry. These reports are stripped of authentication headers and cookies before transmission. See Section 8 (Cookies and Tracking).</li>
+</ul>
+
+<h3>1.3 Information from Third Parties</h3>
+<ul>
+  <li><strong>Single sign-on (SSO):</strong> If you sign in with Google, Apple, or Steam, we receive your account identifier and email address from the SSO provider. We do not receive your password.</li>
+  <li><strong>Linked gaming and social accounts:</strong> If you connect a third-party account (Riot Games, Epic Games, Steam, Twitch, YouTube, GitHub, Reddit, Spotify, and similar), we receive your account identifier, display name, and public profile data from that provider. Game stats (rank, match history) are fetched on your behalf and cached. You can disconnect linked accounts at any time in Settings.</li>
+</ul>
+
+<h3>1.4 Sensitive Data We Do Not Collect</h3>
+<p>We do not intentionally collect special categories of personal data under GDPR Article 9 or "sensitive personal information" under California's CPRA, including:</p>
+<ul>
+  <li>Racial or ethnic origin, political opinions, religious or philosophical beliefs, or trade-union membership;</li>
+  <li>Genetic data or biometric data used to uniquely identify a person;</li>
+  <li>Health data;</li>
+  <li>Data concerning sex life or sexual orientation;</li>
+  <li>Precise geolocation (our IP-derived location is approximate, not precise);</li>
+  <li>Social security numbers, driver's license numbers, passport numbers, financial account numbers, or similar government identifiers.</li>
+</ul>
+<p>Please do not share such information through the Service. If you voluntarily share sensitive information in User Content (for example, inside a message), we process it as part of delivering the Service but do not derive inferences from it.</p>
+
+<h2>2. How We Use Your Information</h2>
+<p>We use your information to:</p>
+<ul>
+  <li><strong>Provide the Service:</strong> Create and manage your account, deliver messages, enable voice and video calls, and display your profile to other users.</li>
+  <li><strong>Ensure safety and security:</strong> Detect abuse, enforce our Terms of Service, prevent fraud, respond to reports, and comply with legal obligations (including CSAM detection and reporting). This includes image safety scanning (perceptual hashing to detect known harmful content; matches may be blocked and reported), automated content moderation (server-owner-configured keyword, spam, link, and mention filters), and nickname filtering (automated profanity filters). You are not subject to decisions based solely on automated processing that produce legal effects or similarly significant effects. All automated safety actions can be appealed by contacting <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject line "Account Appeal"; a human will review your case.</li>
+  <li><strong>Improve the Service:</strong> Fix bugs, analyze aggregate usage patterns (not individual behavior), and develop new features.</li>
+  <li><strong>Communicate with you:</strong> Send verification emails, password reset codes, and service-related notices. We do not send marketing emails.</li>
+  <li><strong>Process payments:</strong> Manage subscriptions and billing through Stripe.</li>
+</ul>
+<p>We do <strong>not</strong> sell, rent, or trade your personal information to third parties. We do <strong>not</strong> share your Howl account data with advertisers. If ads are enabled on certain pages, ad serving is handled by Google AdSense subject to your cookie consent preferences (see Section 8.3).</p>
+
+<h2>3. AI and Machine Learning</h2>
+<p>We do not use your messages, direct message content, voice or video communications, User Content, or other information about your activity on the Service to train artificial intelligence (AI) or machine learning (ML) models, either our own or those of third parties. We do not grant third parties rights to use your content for AI or ML training.</p>
+<p>We may use aggregated or fully de-identified signals (for example, anonymized error patterns or aggregate feature usage counts) to improve the Service. These signals do not identify any individual user.</p>
+
+<h2>4. How We Share Your Information</h2>
+<ul>
+  <li><strong>Other users:</strong> Your username, discriminator, avatar, status, and content you post in servers or direct messages are visible to other users as part of the Service's functionality.</li>
+  <li><strong>Service providers:</strong>
+    <ul>
+      <li><a href="https://stripe.com/privacy">Stripe</a> (payments).</li>
+      <li><a href="https://sentry.io/privacy/">Sentry</a> (error monitoring; opt-in).</li>
+      <li>Cloud hosting provider (backend compute, PostgreSQL, Redis).</li>
+      <li>Voice and video server hosting provider (self-hosted LiveKit SFU).</li>
+      <li><a href="https://resend.com/legal/privacy-policy">Resend</a> (transactional email delivery).</li>
+      <li><a href="https://www.cloudflare.com/privacypolicy/">Cloudflare</a> (CDN, DDoS protection, DNS, object storage, Turnstile CAPTCHA; Turnstile receives your IP address and interaction signals).</li>
+      <li><a href="https://livekit.io/privacy">LiveKit</a> (voice and video call infrastructure; DM call audio and video are end-to-end encrypted and not accessible to LiveKit or Howl).</li>
+      <li><a href="https://klipy.com">Klipy</a> (GIF search; receives search queries only, no account info).</li>
+      <li><strong>Browser push services:</strong> If you enable push notifications, notification messages are delivered through your browser's built-in push service (Google Firebase Cloud Messaging for Chrome, Mozilla Push Service for Firefox, Apple Push Notification Service for Safari). These services receive a push endpoint URL and an encrypted notification payload. No message content or personal data is included in push payloads in plaintext.</li>
+      <li><a href="https://policies.google.com/privacy">Google Fonts</a> (typeface loading; your browser may send your IP address to Google when fonts are loaded).</li>
+      <li><strong>Google AdSense:</strong> If ads are enabled, Google AdSense serves display advertisements on certain pages. AdSense may use cookies and collect data (including IP address and browsing behavior on Howl) to serve ads. Google's data practices are governed by <a href="https://policies.google.com/privacy">Google's Privacy Policy</a>. You can opt out of personalized ads at <a href="https://adssettings.google.com/">Google Ad Settings</a>. Ads are not shown to users who have not consented to advertising cookies.</li>
+    </ul>
+  </li>
+  <li><strong>Gaming and social platforms:</strong> If you link a third-party account, we exchange data with that provider to fetch your profile and stats. Providers include Riot Games (Valorant, League of Legends, TFT), Epic Games (Fortnite), Steam/Valve (CS2, Dota 2), Twitch, YouTube/Google, GitHub, Reddit, Spotify, and community stat API services (apexlegendsapi.com, marvelrivalsapi.com, r6data.eu). We share your OAuth token or username and receive public profile information, game stats, and rank. You can disconnect at any time in Settings.</li>
+  <li><strong>Legal obligations:</strong> We may disclose information if required by law, subpoena, court order, or other legal process. See Section 12 (Law Enforcement).</li>
+  <li><strong>Safety:</strong> We may disclose information to prevent imminent harm to life or safety, or to report child exploitation material to NCMEC or equivalent national authorities.</li>
+  <li><strong>Business transfers:</strong> If Howl is involved in a merger, acquisition, or sale of assets, your information may be transferred. We will notify you before your information becomes subject to a different privacy policy.</li>
+  <li><strong>Aggregated or de-identified data:</strong> We may create aggregated or de-identified information from personal data (data that does not identify any individual user) and use or share it for analytics, service improvement, security research, and public reporting without the restrictions that apply to personal information.</li>
+</ul>
+
+<h2>5. End-to-End Encrypted Direct Messages</h2>
+<p>Direct messages (DMs), group direct messages, and DM voice and video calls on Howl are end-to-end encrypted. Howl uses the Messaging Layer Security protocol (MLS, RFC 9420) for direct-message and group-DM content encryption and key management. With end-to-end encryption:</p>
+<ul>
+  <li>Message and call content is encrypted on your device and decrypted only on the recipient's device.</li>
+  <li>In Maximum Privacy mode (the default), we store only ciphertext and <strong>cannot read</strong> your encrypted DMs. If you opt into Secure &amp; Easy mode, we hold a recoverable backup of your keys; see Section 5.2.</li>
+  <li>Metadata (sender, recipient, timestamp, channel ID, approximate message size) is not encrypted and is accessible to us for service operation and legal compliance.</li>
+</ul>
+
+<h3>5.1 Maximum Privacy mode (default)</h3>
+<p>Your encryption keys are derived from a passphrase you set and are stored only on your devices. Howl holds no copy of your passphrase or keys. If you lose both your passphrase and your recovery key, your E2E-encrypted data is permanently unrecoverable. We cannot reset your passphrase or recover your data for you.</p>
+
+<h3>5.2 Secure &amp; Easy mode (opt-in)</h3>
+<p>Howl stores a password-protected backup of your encryption keys (an "escrow blob"), encrypted with a key derived from your account password. This allows recovery: after resetting your account password, you can complete the server-recovery flow from Settings → Encryption on your next login to regain access to your E2E-encrypted data. In this mode, Howl LLC and authorized personnel could, in principle, derive your encryption keys if compelled by valid legal process combined with access to your account password (a capability we do not use absent such process).</p>
+
+<h3>5.3 File Attachments</h3>
+<p>Files sent in encrypted DMs are encrypted on your device using AES-256-GCM with a unique per-file key before upload. Thumbnails are encrypted separately with their own keys. File encryption keys are distributed inside the end-to-end-encrypted message payload. In Maximum Privacy mode (the default) we never have access to them and cannot decrypt your files; if you opt into Secure &amp; Easy mode, Howl could derive these keys under valid legal process, as described in Section 5.2. Encrypted files are stored with randomized filenames.</p>
+
+<h3>5.4 Reporting Secure DMs</h3>
+<p>If you report a message in a Secure (end-to-end encrypted) DM, your device shares the following with Howl's moderation team: the decrypted plaintext of the specific reported message and the encryption key for that conversation. Our moderation team may use the key to decrypt surrounding messages in that conversation for context. Your other conversations are not decrypted or reviewed as part of the report. Shared content is encrypted at rest on our servers using a separate server-side key and is used only for moderation review.</p>
+
+<h3>5.5 Local Plaintext Cache</h3>
+<p>To avoid re-decrypting messages on every page load, your device caches decrypted DM content locally (in your browser's IndexedDB). This cache is scoped to your account, is not shared with us, and is cleared when you log out. You can manually clear it at any time in Account Settings &gt; Data Controls.</p>
+
+<h2>6. Voice and Video Communications</h2>
+<p>Howl does not record or store the audio or video content of voice or video calls.</p>
+<ul>
+  <li><strong>Server voice channels</strong> use SFrame end-to-end encryption between participants, carried over a DTLS-SRTP transport. The per-channel key is generated and distributed among the participants' devices, so our media servers forward the encrypted frames for routing without access to the media content. Server voice channel media is not recorded or retained.</li>
+  <li><strong>Direct-message voice and video calls</strong> use SFrame end-to-end encryption between participants. The per-call encryption key is derived from the conversation's end-to-end-encrypted (MLS) group state and is available only to the participants' devices. Our media servers forward the encrypted frames without access to the media content.</li>
+</ul>
+<p>Metadata about calls (participant identifiers, start and end timestamps, channel ID, approximate duration) is visible to our servers for service operation and abuse prevention. If you report an incident that occurred in a call, reports may rely on participant-submitted evidence since we do not retain media.</p>
+
+<h2>7. Data Retention</h2>
+<ul>
+  <li><strong>Account data:</strong> Retained as long as your account is active.</li>
+  <li><strong>Server messages:</strong> Per server retention settings (configured by the server owner). If no limit is set, messages are retained until deleted by the server owner or message author.</li>
+  <li><strong>Direct messages:</strong> Retained until you or the other participant deletes them, or until you delete your account.</li>
+  <li><strong>Audit logs:</strong> Server audit logs are retained for 90 days by default, or as configured by the server owner.</li>
+  <li><strong>Sessions:</strong> Login sessions are automatically deleted after 90 days of inactivity.</li>
+  <li><strong>Raw IP address and user-agent on sessions:</strong> Stored on the session record at sign-in for security and abuse-prevention investigations; automatically nulled out after 90 days of inactivity. The truncated, salted IP hash used for new-device detection is retained for the lifetime of the session record itself.</li>
+  <li><strong>Push notification subscriptions:</strong> Automatically removed after 90 days.</li>
+  <li><strong>Data exports:</strong> Download files are available for 14 days, then permanently deleted.</li>
+  <li><strong>Temporary data:</strong> Email verification codes (15 minutes), password reset codes (expiry-based), and expired invites are automatically cleaned up.</li>
+  <li><strong>Upload safety hashes:</strong> Perceptual (PDQ — image content only) and cryptographic (SHA-256 — all non-encrypted uploads, including video, audio, and documents) hashes are retained for 180 days for safety auditing. Hashes that match known harmful content are retained indefinitely for legal compliance.</li>
+  <li><strong>Child-safety evidence (CSAM):</strong> Where we identify content as child sexual abuse material — by hash match at upload time, by user report and Trust &amp; Safety review, or by a National Center for Missing &amp; Exploited Children (NCMEC) hash list — we preserve the file, hashes, message and account metadata, the raw IP address and user-agent associated with the upload, and a snapshot of the uploader's profile (username, email hash, account creation date) for as long as required under 18 U.S.C. § 2258A and related law. This preservation overrides our normal deletion timelines, including account self-deletion: a user who deletes their account does not erase confirmed CSAM evidence.</li>
+  <li><strong>Error reports (Sentry):</strong> Retained per Sentry's data retention policy (typically 90 days).</li>
+  <li><strong>Account deletion:</strong> Profile, email, and settings are permanently deleted. Messages are anonymized (author replaced with "Deleted User"). Uploaded files are deleted from storage. Some data is retained where required by law, including active legal proceedings and CSAM evidence preservation as described above.</li>
+</ul>
+
+<h2>8. Cookies and Tracking</h2>
+<h3>8.1 Cookies We Use</h3>
+<table>
+  <thead><tr><th>Cookie</th><th>Purpose</th><th>Type</th><th>Duration</th></tr></thead>
+  <tbody>
+    <tr><td><code>howl_refresh</code></td><td>Authentication session</td><td>Essential</td><td>7 days</td></tr>
+    <tr><td><code>howl_sso_state</code></td><td>CSRF protection during SSO login</td><td>Essential</td><td>5 minutes</td></tr>
+    <tr><td>AdSense cookies</td><td>Ad serving (Google AdSense)</td><td>Optional (consent required)</td><td>Varies (set by Google)</td></tr>
+  </tbody>
+</table>
+<p>We use essential cookies only. These cookies are <code>httpOnly</code>, <code>secure</code> (in production), and <code>sameSite: strict</code> (or <code>lax</code> for the SSO state cookie, which must survive the OAuth redirect).</p>
+
+<h3>8.2 Error Reporting (Sentry)</h3>
+<p>If you consent via the cookie consent banner, we initialize Sentry for error monitoring. Sentry may set its own cookies or use local storage for session replay on errors. You can opt out at any time through the cookie settings in the app. When you opt out, Sentry is not loaded and no error data is collected.</p>
+
+<h3>8.3 Advertising and Analytics</h3>
+<p>We do <strong>not</strong> use Google Analytics, social media trackers, or any third-party tracking for profiling purposes.</p>
+<p>If ads are enabled, we use Google AdSense to serve display advertisements on certain pages. AdSense may set cookies to serve and measure ads. Personalized ads are only served if you consent via the cookie consent banner. You can withdraw consent at any time in Account Settings &gt; Data Controls. If you do not consent, either no ads are shown or only non-personalized ads are served (no tracking cookies).</p>
+<p>We do <strong>not</strong> sell, rent, or trade your personal information to advertisers. Howl does not share your account data, messages, or usage history with Google for ad targeting.</p>
+
+<h2>9. Your Rights</h2>
+<p>Depending on your jurisdiction, you may have some or all of the following rights.</p>
+<p><strong>Response time.</strong> We respond to verifiable privacy requests within 45 days, with one possible 45-day extension if the request is complex (we will notify you of any extension and explain why). Requests under GDPR or UK GDPR are answered within one calendar month, extendable by up to two months for complex requests.</p>
+<p><strong>Verification.</strong> To protect your data, we verify privacy requests before responding. For account-related requests, we may require you to confirm ownership of the account email or log in. For requests about data tied to an account you no longer have access to, we may ask for additional information to match your request against our records. We will not fulfill requests we cannot verify.</p>
+
+<h3>9.1 All Users</h3>
+<ul>
+  <li><strong>Access:</strong> Request a copy of the personal data we hold about you (available via Account Settings &gt; Data Controls &gt; Export Data).</li>
+  <li><strong>Deletion:</strong> Delete your account and associated data (available via Account Settings &gt; Security &gt; Delete Account).</li>
+  <li><strong>Correction:</strong> Update your profile information at any time through Account Settings. To correct your date of birth or other information that cannot be changed in the app, contact <a href="mailto:support@howlpro.com">support@howlpro.com</a>.</li>
+</ul>
+
+<h3>9.2 European Economic Area, UK, and Switzerland (GDPR)</h3>
+<p>In addition to the above:</p>
+<ul>
+  <li><strong>Portability:</strong> Receive your data in a structured, machine-readable format (JSON export).</li>
+  <li><strong>Restriction:</strong> Request that we restrict processing of your data in certain circumstances. Contact <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject line "Data Protection". We will restrict processing of your data within 30 days while we assess the request.</li>
+  <li><strong>Objection:</strong> Object to processing based on legitimate interest.</li>
+  <li><strong>Withdraw consent:</strong> Withdraw consent for optional processing (such as Sentry error reporting) at any time, without affecting the lawfulness of prior processing.</li>
+  <li><strong>Supervisory authority:</strong> Lodge a complaint with your local data protection authority.</li>
+</ul>
+
+<p><strong>Legal bases for processing (GDPR Article 6):</strong></p>
+<table>
+  <thead><tr><th>Purpose</th><th>Legal Basis</th></tr></thead>
+  <tbody>
+    <tr><td>Creating and managing your account; delivering messages, calls, and core features</td><td>Contract (Art. 6(1)(b))</td></tr>
+    <tr><td>Processing payments and managing subscriptions</td><td>Contract + Legal obligation</td></tr>
+    <tr><td>Security, abuse prevention, fraud detection, and rate limiting</td><td>Legitimate interest (Art. 6(1)(f))</td></tr>
+    <tr><td>Image safety scanning (CSAM detection)</td><td>Legitimate interest + Legal obligation</td></tr>
+    <tr><td>Reporting CSAM to authorities</td><td>Legal obligation (Art. 6(1)(c))</td></tr>
+    <tr><td>Responding to valid legal process</td><td>Legal obligation (Art. 6(1)(c))</td></tr>
+    <tr><td>Sentry error monitoring</td><td>Consent (Art. 6(1)(a))</td></tr>
+    <tr><td>Personalized advertising (if enabled)</td><td>Consent (Art. 6(1)(a))</td></tr>
+    <tr><td>Service-related notices (verification, password reset)</td><td>Contract + Legitimate interest</td></tr>
+    <tr><td>Emergency disclosures to prevent imminent harm</td><td>Vital interests (Art. 6(1)(d))</td></tr>
+  </tbody>
+</table>
+
+<p><strong>UK GDPR Representative.</strong> We are in the process of appointing a UK representative under UK GDPR Article 27 and will update this policy when the appointment is in place.</p>
+
+<h3 id="ccpa">9.3 California Residents (CCPA/CPRA)</h3>
+<ul>
+  <li><strong>Know:</strong> Request what personal information we collect, use, and disclose.</li>
+  <li><strong>Delete:</strong> Request deletion of your personal information.</li>
+  <li><strong>Correct:</strong> Request correction of inaccurate personal information.</li>
+  <li><strong>Non-discrimination:</strong> We will not discriminate against you for exercising your rights.</li>
+  <li><strong>Limit use of sensitive personal information:</strong> You may direct us to limit the use of your sensitive personal information. We do not use sensitive personal information for purposes outside the limited permitted uses under CPRA.</li>
+  <li><strong>We do not sell personal information.</strong> We do not share personal information for cross-context behavioral advertising.</li>
+  <li><strong>Global Privacy Control (GPC):</strong> We honor the GPC browser signal as a request to opt out of the sale or sharing of personal information. Because we do not sell or share personal information for cross-context behavioral advertising, this signal has no effect on how we process your data today, but we recognize it and will apply it to any future practices.</li>
+  <li><strong>Authorized agent:</strong> You may designate an authorized agent to submit a request on your behalf. Your agent must provide proof of your written permission, and we may require you to verify your identity directly before granting the request.</li>
+  <li><strong>Shine the Light (California Civil Code § 1798.83):</strong> We do not share personal information with third parties for their own direct marketing purposes.</li>
+</ul>
+
+<p><strong>Categories of personal information collected in the past 12 months</strong> (CCPA Section 1798.140):</p>
+<table>
+  <thead><tr><th>CCPA Category</th><th>Collected?</th><th>Source</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>Identifiers (username, email, IP address, account UUID)</td><td>Yes</td><td>You, your device</td><td>Provide the Service, security</td></tr>
+    <tr><td>Customer records (phone number if SMS MFA, profile fields)</td><td>Yes</td><td>You</td><td>Provide the Service, MFA</td></tr>
+    <tr><td>Protected classifications (race, religion, etc.)</td><td>No</td><td>N/A</td><td>N/A</td></tr>
+    <tr><td>Commercial information (subscription status, Stripe customer ID)</td><td>Yes</td><td>You, Stripe</td><td>Payments</td></tr>
+    <tr><td>Biometric information</td><td>No</td><td>N/A</td><td>N/A</td></tr>
+    <tr><td>Internet or other network activity (usage data, feature use)</td><td>Yes</td><td>Your device</td><td>Provide the Service</td></tr>
+    <tr><td>Geolocation (approximate, derived from IP)</td><td>Yes</td><td>Your device</td><td>Security, abuse prevention</td></tr>
+    <tr><td>Audio, electronic, visual (voice and video call streams, transient only; User Content)</td><td>Yes</td><td>You</td><td>Provide the Service (call media is not stored)</td></tr>
+    <tr><td>Professional or employment information</td><td>No</td><td>N/A</td><td>N/A</td></tr>
+    <tr><td>Education information</td><td>No</td><td>N/A</td><td>N/A</td></tr>
+    <tr><td>Inferences (presence, activity status)</td><td>Yes, limited</td><td>Your device</td><td>Provide the Service</td></tr>
+    <tr><td>Sensitive personal information (precise geolocation, racial origin, religion, sexual orientation, biometric identifiers, health, contents of mail/email/text, government IDs)</td><td>No</td><td>N/A</td><td>N/A</td></tr>
+  </tbody>
+</table>
+<p>We have not sold or shared personal information for cross-context behavioral advertising in the past 12 months. We have disclosed personal information to the service providers listed in Section 4 for the business purposes described in Section 2.</p>
+
+<h3>9.4 Brazil (LGPD)</h3>
+<p>You have rights to access, correction, anonymization, portability, deletion, and information about sharing. Contact <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject line "Data Protection".</p>
+
+<h3>9.5 Other Jurisdictions</h3>
+<p><strong>US state privacy laws.</strong> If you are a resident of a US state with a comprehensive consumer-privacy law (including Virginia (VCDPA), Colorado (CPA), Connecticut (CTDPA), Utah (UCPA), Texas (TDPSA), Oregon (OCPA), Delaware (DPDPA), Montana (MCDPA), Iowa, Tennessee, and others as they take effect), you may have rights comparable to those in Sections 9.1 to 9.3, including the right to access, delete, and correct your personal information, and to opt out of targeted advertising, sale, and certain profiling activities.</p>
+<p><strong>Other countries.</strong> We respect privacy rights under applicable laws in your jurisdiction, including Australia (Privacy Act), Canada (PIPEDA), South Africa (POPIA), South Korea (PIPA), and Japan (APPI).</p>
+<p>Contact <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject "Data Protection" to exercise any of these rights.</p>
+
+<h3>9.6 Automated Decision-Making</h3>
+<p>We do not make decisions about you based solely on automated processing that produce legal effects or similarly significant effects. Some moderation features use automated techniques:</p>
+<ul>
+  <li><strong>Spam and abuse detection.</strong> Automated systems may temporarily restrict actions (for example, message rate limits) based on behavioral patterns. These restrictions are short-lived and reversible.</li>
+  <li><strong>Image safety scanning.</strong> Uploads are scanned using perceptual hashing against a database of known harmful content (CSAM). Matches may block the upload and be reported to the appropriate authorities. See Section 2.</li>
+  <li><strong>Server moderation rules.</strong> Server owners may configure keyword, link, spam, and mention filters within their own communities. These apply only to servers you participate in and are controlled by the server owner, not Howl.</li>
+</ul>
+<p>All automated actions can be appealed by contacting <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject "Account Appeal". A human will review your case, and the decision may be reversed. Under GDPR Article 22 and similar laws, you have the right to human review of any decision that has a legal or similarly significant effect.</p>
+
+<h2>10. Children's Privacy</h2>
+<p>Howl is for users aged <strong>13 and older</strong>. We do not knowingly collect data from children under 13. If we learn we have, we will promptly delete it and terminate the account. Users between 13 and 17 may use the Service with parental or guardian consent. At registration, users in this age range must affirmatively confirm — via a checkbox separate from the Terms of Service agreement — that a parent or legal guardian has read these Terms and consents to their use of Howl. We record this affirmation on the user's account. We do not currently verify parental consent through a parent-side challenge; the affirmation is an attestation, consistent with standard industry practice for general-audience communication platforms. We additionally offer Family Link tools that allow parents to manage their child's account. Family Link is optional. Contact <a href="mailto:support@howlpro.com">support@howlpro.com</a> if you believe a child under 13 is using the Service.</p>
+
+<h2>11. International Data Transfers</h2>
+<p>Your information may be processed and stored in countries outside your country of residence, including the United States. When we transfer data internationally, we rely on:</p>
+<ul>
+  <li><strong>Standard Contractual Clauses (SCCs)</strong> approved by the European Commission (Modules 1 and 2 as applicable).</li>
+  <li><strong>Data Processing Agreements</strong> with our service providers that include GDPR Article 28 requirements.</li>
+  <li><strong>Your consent</strong>, where applicable.</li>
+  <li><strong>Adequacy decisions</strong>, where they apply to the destination country.</li>
+</ul>
+<p>We have not self-certified under the EU-U.S., Swiss-U.S., or UK Data Privacy Framework (DPF) at this time, and rely on SCCs and Data Processing Agreements for transfers to U.S.-based service providers. Any international transfer is conducted to provide a level of data protection consistent with this Privacy Policy and applicable law.</p>
+
+<h2>12. Law Enforcement and Legal Requests</h2>
+<p>We may disclose information in response to valid legal process (subpoena, court order, search warrant, or equivalent international process via MLAT). We evaluate each request for legal validity, narrow disclosure to what is legally required, and notify you before disclosing unless prohibited by law. For end-to-end encrypted content (DM messages, DM file attachments, and DM voice and video calls), we can generally provide only ciphertext or metadata. For users in the default Maximum Privacy mode we do not possess decryption keys; for users who opt into Secure &amp; Easy recovery, we hold an escrowed copy of their keys and may be able to derive them under valid legal process (see Section 5.2). For emergencies involving imminent danger to life, we may disclose information without legal process to appropriate law enforcement. See our <a href="/law-enforcement">Law Enforcement Guidelines</a> for details.</p>
+
+<h2>13. Security</h2>
+<p>We implement reasonable security measures to protect your data, including:</p>
+<ul>
+  <li>Passwords securely hashed using industry-standard algorithms.</li>
+  <li>End-to-end encryption for Secure direct messages and DM voice and video calls.</li>
+  <li>HTTPS for all data in transit.</li>
+  <li><code>httpOnly</code>, <code>secure</code>, <code>sameSite</code> cookies for session management.</li>
+  <li>Multi-factor authentication (multiple methods available).</li>
+  <li>Rate limiting on authentication and sensitive endpoints.</li>
+  <li>Email addresses encrypted at rest.</li>
+  <li>Input validation and sanitization.</li>
+</ul>
+<p>Access to personal data by Howl personnel is restricted to authorized individuals on a need-to-know basis, subject to contractual confidentiality obligations and access logging.</p>
+<p>No system is 100% secure. If you discover a security vulnerability, please report it to <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject line "Security Report".</p>
+
+<h2>14. Data Breach Notification</h2>
+<p>If a personal data breach poses a risk to your rights:</p>
+<ul>
+  <li><strong>EU/EEA users:</strong> We will notify the relevant supervisory authority within 72 hours and notify affected users without undue delay where the breach is likely to result in a high risk.</li>
+  <li><strong>Other jurisdictions:</strong> We will notify affected users and relevant regulators in accordance with applicable breach notification laws (California, Australia, Brazil, and others as applicable).</li>
+</ul>
+
+<h2>15. Changes to This Policy</h2>
+<p>We may update this Privacy Policy from time to time. If we make material changes, we will notify you through the Service (for example, an in-app notification) or by email. Your continued use of the Service after the effective date of any changes constitutes acceptance. If you disagree, you may delete your account.</p>
+
+<h2>16. Contact Us</h2>
+<ul>
+  <li><strong>General support:</strong> <a href="mailto:support@howlpro.com">support@howlpro.com</a></li>
+  <li><strong>Data protection inquiries (GDPR, UK GDPR, LGPD, CCPA/CPRA):</strong> <a href="mailto:support@howlpro.com">support@howlpro.com</a> with the subject line "Data Protection". We aim to respond to verifiable requests within 30 days.</li>
+</ul>
+<p>Howl LLC<br>30 N Gould St Ste N<br>Sheridan, WY 82801</p>
+<hr>
+<p style="color: #475569; font-size: 0.8rem;">By using Howl, you acknowledge that you have read and understood this Privacy Policy.</p>

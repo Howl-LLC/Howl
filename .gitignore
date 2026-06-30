@@ -1,0 +1,94 @@
+# Worktrees
+.worktrees
+
+# Superpowers brainstorm sessions
+.superpowers
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+backend/generated
+backend/uploads
+backend/exports
+dist-ssr
+*.local
+.env
+backend/.env
+deploy/selfhost/.env
+release/
+howl-backend.zip
+
+# Native addon build artifacts (NVIDIA Broadcast Phase 1+). Built locally
+# on Windows + RTX machines; never committed.
+native/**/build/
+native/**/*.node
+
+# Editor directories and files
+.cursor/
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# LiveKit local binary & config (contains credentials)
+livekit-bin/
+livekit/
+livekit.yaml
+
+# Large binaries
+*.exe
+tools/nuclei*
+
+# MediaPipe WASM — copied from node_modules on postinstall (see scripts/copy-mediapipe-assets.mjs)
+# .tflite model files under public/mediapipe/models/ ARE committed (~500 KB).
+public/mediapipe/wasm/
+# RNNoise sync bundle (~1.9 MB) — copied from @jitsi/rnnoise-wasm on postinstall.
+public/rnnoise-sync.js
+
+# Fontshare display fonts (Clash Display + Satoshi) — fetched at build via
+# scripts/fetch-fonts.mjs; not committed (ITF Free Font License redistribution).
+public/fonts/clash-display/
+public/fonts/satoshi/
+
+# Certificates / keys
+*.pem
+*.key
+*.cert
+
+# Local env overrides
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+.claude/settings.local.json
+.claude/worktrees/
+.claude/schedules/
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/.playwright-mcp/
+.superpowers/
+
+# Internal audit & release-prep artifacts — local only, never publish
+/CRYPTO_AUDIT.md
+/security_recon_report.md
+/sync-vault.ps1
+/docs/audits/
+/docs/dev-notes/
+/mockups/

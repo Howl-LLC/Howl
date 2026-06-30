@@ -1,0 +1,525 @@
+/*
+ * Howl Navigator overlay styles — namespaced under `hn-` and scoped to `.hn-stage`
+ * so nothing leaks into the app's global/Tailwind cascade. Inline styles in the
+ * React components drive positions, transforms, per-item reveal delays, the
+ * crescent mask, and section colors; this file holds the static look + motion.
+ *
+ * The tiles intentionally use a rounded "Apple-Watch" shape rather
+ * than the classic rail's 4px squircle — that softness is core to this surface.
+ */
+
+.hn-stage {
+  /* Theme-aware palette: every --hn-* token aliases the app's theme token, so
+     the navigator retints automatically with data-theme on <html> (the stage is
+     a descendant). No fluorescent glow — flat surfaces on theme tokens only. */
+  --hn-bg: var(--bg-app);
+  --hn-card: var(--bg-panel);
+  --hn-tile: var(--fill-hover);
+  --hn-tile-hi: var(--fill-active);
+  --hn-border: var(--border-subtle);
+  --hn-border-hi: var(--border-strong);
+  --hn-text: var(--text-primary);
+  --hn-muted: var(--text-secondary);
+  --hn-faint: var(--text-tertiary);
+  --hn-accent: var(--cyan-accent);
+  --hn-accent-soft: var(--accent-muted);
+  --hn-tile-size: 64px;
+  /* Shared squircle corner radius — section cards, loose tiles, and mini icons
+     all use this so the icons and the sections share one rounded-squircle corner. */
+  --hn-radius: 18px;
+
+  position: fixed;
+  inset: 0;
+  /* Above app content, below the modals the overlay itself spawns (e.g. the
+     create/join-server modal at --z-modal) and below the title bar (--z-max). */
+  z-index: var(--z-overlay);
+  overflow: hidden;
+  color: var(--hn-text);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  /* Fades in on reveal and back out on close (the reverse of opening). */
+  opacity: 0;
+  transition: opacity 360ms ease;
+}
+.hn-stage[data-revealed="true"] { opacity: 1; }
+.hn-stage * { box-sizing: border-box; }
+
+/* ---------- Pinned cluster ---------- */
+.hn-cluster {
+  position: absolute;
+  top: 26px;
+  left: 26px;
+  width: 320px;
+  height: 320px;
+  z-index: 4;
+}
+.hn-pin {
+  position: absolute;
+  cursor: grab;
+  touch-action: none;
+  will-change: left, top;
+}
+.hn-pin:active { cursor: grabbing; }
+.hn-pin-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 20px;
+  background: var(--hn-tile);
+  border: 1px solid var(--hn-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hn-text);
+  position: relative;
+  transition:
+    transform 520ms cubic-bezier(.18, .9, .24, 1.08),
+    opacity 360ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 200ms ease;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34);
+}
+.hn-pin.hn-half .hn-pin-inner { border-radius: 999px; }
+.hn-pin:not(.hn-dragging) .hn-pin-inner:hover { background: var(--hn-tile-hi); border-color: var(--hn-border-hi); }
+.hn-pin.hn-dragging .hn-pin-inner { box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); }
+
+/* closed (pre-reveal) state for the fan animation — `--hn-collapse` set inline */
+.hn-cluster[data-open="false"] .hn-pin-inner { transform: var(--hn-collapse); opacity: 0; }
+.hn-cluster[data-open="false"] .hn-pin.hn-logo .hn-pin-inner { transform: none; opacity: 1; }
+
+.hn-pin.hn-logo .hn-pin-inner {
+  background: var(--hn-accent);
+  border-color: transparent;
+  cursor: pointer;
+}
+.hn-pin.hn-logo .hn-pin-inner:hover { filter: brightness(1.06); }
+.hn-pin .hn-logo-img { width: 64%; height: 64%; display: block; object-fit: contain; pointer-events: none; }
+
+.hn-pin .hn-ic { width: 22px; height: 22px; color: var(--hn-muted); }
+.hn-pin.hn-active .hn-pin-inner { background: var(--hn-accent-soft); border-color: var(--hn-accent); }
+.hn-pin.hn-active .hn-ic { color: #fff; }
+.hn-pin-label {
+  position: absolute;
+  left: 50%;
+  bottom: -22px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  letter-spacing: 0.2px;
+  color: var(--hn-faint);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+.hn-pin:hover .hn-pin-label { opacity: 1; }
+.hn-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--hn-bg);
+}
+.hn-status {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 3px solid var(--hn-bg);
+}
+
+/* ---------- Canvas chrome (search / snap / zoom / new section) ---------- */
+.hn-panel { position: absolute; inset: 0; overflow: hidden; }
+.hn-viewport { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; }
+.hn-viewport.hn-panning { cursor: grabbing; }
+
+.hn-panel-head {
+  position: absolute;
+  top: 22px;
+  right: 32px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hn-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  isolation: isolate;
+  contain: layout style;
+  border-radius: 11px;
+  padding: 9px 14px;
+  color: var(--hn-muted);
+  font-size: 13.5px;
+  min-width: 248px;
+  white-space: nowrap;
+}
+.hn-search input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--hn-text);
+  font: inherit;
+  flex: 1;
+  min-width: 0;
+}
+.hn-search input::placeholder { color: var(--hn-muted); }
+.hn-search svg { width: 16px; height: 16px; flex: none; }
+
+.hn-ghost-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px dashed var(--hn-border-hi);
+  color: var(--hn-muted);
+  border-radius: 11px;
+  padding: 9px 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: border-color 140ms, color 140ms, background 140ms;
+}
+.hn-ghost-btn:hover { color: var(--hn-text); border-color: var(--hn-accent); background: var(--hn-accent-soft); }
+.hn-ghost-btn svg { width: 15px; height: 15px; }
+
+.hn-snap-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--hn-border);
+  color: var(--hn-muted);
+  border-radius: 11px;
+  padding: 9px 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: color 140ms, border-color 140ms, background 140ms;
+}
+.hn-snap-toggle svg { width: 16px; height: 16px; color: var(--hn-faint); }
+.hn-snap-toggle:hover { color: var(--hn-text); border-color: var(--hn-border-hi); }
+.hn-snap-toggle.hn-on { background: var(--hn-accent-soft); border-color: var(--hn-accent); color: var(--hn-text); }
+.hn-snap-toggle.hn-on svg { color: var(--hn-accent); }
+
+.hn-zoom-ctl { display: flex; align-items: center; background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); backdrop-filter: blur(20px) saturate(1.3); -webkit-backdrop-filter: blur(20px) saturate(1.3); isolation: isolate; contain: layout style; border-radius: 11px; overflow: hidden; }
+.hn-zoom-ctl button {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--hn-muted);
+  cursor: pointer;
+  font-size: 18px;
+  font-family: inherit;
+  transition: background 120ms, color 120ms;
+}
+.hn-zoom-ctl button:hover { background: var(--hn-tile); color: var(--hn-text); }
+.hn-zoom-ctl .hn-zsep { width: 1px; height: 20px; background: var(--hn-border); flex: none; }
+
+.hn-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  isolation: isolate;
+  contain: layout style;
+  border-radius: 11px;
+  color: var(--hn-muted);
+  cursor: pointer;
+  transition: color 140ms, border-color 140ms, background 140ms;
+}
+.hn-close:hover { color: var(--hn-text); border-color: var(--hn-border-hi); background: var(--hn-tile); }
+.hn-close svg { width: 17px; height: 17px; }
+
+/* ---------- Pannable world ---------- */
+.hn-canvas { position: absolute; top: 0; left: 0; will-change: transform; }
+.hn-canvas.hn-snapping { background-image: radial-gradient(circle, color-mix(in srgb, var(--text-primary) 32%, transparent) 2px, transparent 2.4px); }
+
+/* ---------- Section "note" cards ---------- */
+.hn-section-card {
+  position: absolute;
+  /* Solid card on a theme surface with a faint hairline OUTLINE; the outline
+     colour and fill are set inline per-section (borderColor: sec.oc,
+     background: sec.fc), with the legacy/default fill resolving to a theme
+     token in the component so default sections follow the active theme. */
+  background: var(--bg-elevated);
+  border: 1px solid var(--hn-border-hi);
+  border-radius: var(--hn-radius);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  padding: 10px;
+  user-select: none;
+  transition: box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.hn-section-card.hn-dragging { box-shadow: 0 26px 64px rgba(0, 0, 0, 0.6); }
+.hn-section-card.hn-drop-target { border-color: var(--hn-accent) !important; box-shadow: 0 0 0 2px var(--hn-accent-soft), 0 16px 40px rgba(0, 0, 0, 0.4); }
+.hn-section-card.hn-expanded { box-shadow: 0 30px 70px rgba(0, 0, 0, 0.7); }
+
+/* nav-destination minis inside the built-in "howl" section (icon, not server) */
+.hn-mini-tile.hn-nav-mini { position: relative; color: var(--hn-text); cursor: pointer; }
+.hn-mini-tile.hn-nav-mini:hover { background: var(--hn-tile-hi); border-color: var(--hn-border-hi); }
+.hn-mini-tile.hn-nav-mini.hn-active { border-color: var(--hn-accent); color: var(--hn-accent); }
+.hn-nav-ic { width: 20px; height: 20px; }
+/* Home renders the Howl logo (the brand mark) instead of a glyph. */
+.hn-nav-logo { object-fit: contain; pointer-events: none; }
+.hn-mini-tile .hn-nav-logo { width: 30px; height: 30px; }
+/* The logo tile is JUST the mark — no box, border, or fill behind it (matches
+   the resting trigger). Overrides the tile chrome and fills the whole button. */
+.hn-logo-tile { background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
+.hn-logo-tile:hover { background: transparent !important; border-color: transparent !important; }
+.hn-logo-tile .hn-nav-logo { width: 100%; height: 100%; }
+/* nav destination as a loose canvas tile (dragged out of the howl section) */
+.hn-tile.hn-nav-tile { color: var(--hn-text); }
+.hn-tile.hn-nav-tile .hn-nav-ic { width: 26px; height: 26px; }
+.hn-tile.hn-nav-tile .hn-nav-logo { width: 44px; height: 44px; }
+.hn-sec-header { display: flex; align-items: center; gap: 7px; height: 24px; margin-bottom: 9px; cursor: grab; padding: 0 2px; }
+.hn-sec-header:active { cursor: grabbing; }
+.hn-sec-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border-radius: 6px;
+  flex: none;
+  color: var(--hn-muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.hn-sec-menu-btn svg { width: 16px; height: 16px; }
+.hn-sec-menu-btn:hover { background: var(--hn-tile-hi); color: var(--hn-text); }
+.hn-menu-backdrop { position: fixed; inset: 0; z-index: 45; }
+.hn-sec-menu {
+  position: absolute;
+  top: 32px;
+  left: 4px;
+  z-index: 50;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 8px;
+  width: 184px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  isolation: isolate;
+  contain: layout style;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hn-sec-menu-label { font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--hn-faint); padding: 2px 6px 5px; }
+.hn-sec-swatches { display: flex; gap: 7px; padding: 0 6px 7px; }
+.hn-swatch { width: 24px; height: 24px; border-radius: 8px; cursor: pointer; padding: 0; }
+.hn-swatch.hn-active { box-shadow: 0 0 0 2px var(--hn-accent), 0 0 0 4px var(--glass-bg); }
+.hn-sec-menu-sep { height: 1px; background: var(--hn-border); margin: 3px 2px; }
+.hn-sec-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--hn-text);
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+}
+.hn-sec-menu-item:hover { background: var(--hn-tile); }
+.hn-sec-menu-item.hn-danger { color: #ff6b6b; }
+.hn-sec-menu-item svg { width: 15px; height: 15px; flex: none; }
+.hn-sec-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hn-text);
+  outline: none;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: text;
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hn-sec-title:hover { background: var(--hn-tile); }
+.hn-sec-title:focus { background: var(--hn-tile); box-shadow: 0 0 0 1px var(--hn-accent); }
+.hn-sec-count { font-size: 11px; color: var(--hn-faint); margin-left: auto; padding-right: 2px; }
+.hn-sec-grid { display: grid; gap: 10px; cursor: pointer; }
+.hn-mini-tile {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--hn-radius);
+  background: var(--hn-tile);
+  border: 1px solid var(--hn-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hn-text);
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+.hn-mini-tile:active { cursor: grabbing; }
+.hn-mini-tile.hn-folder { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 6px; background: var(--hn-card); }
+.hn-mini-tile.hn-folder .hn-m { border-radius: 4px; width: 100%; height: 100%; overflow: hidden; }
+.hn-sec-more {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--hn-radius);
+  border: 1px dashed var(--hn-border-hi);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hn-muted);
+}
+.hn-sec-empty { grid-column: 1 / -1; align-self: center; justify-self: center; font-size: 11px; color: var(--hn-faint); }
+.hn-sec-resize { position: absolute; right: 4px; bottom: 4px; width: 15px; height: 15px; cursor: nwse-resize; color: var(--hn-faint); opacity: 0; transition: opacity 140ms; }
+.hn-section-card:hover .hn-sec-resize { opacity: 0.7; }
+.hn-sec-resize:hover { opacity: 1; color: var(--hn-text); }
+
+/* ---------- Loose server / folder tiles ---------- */
+.hn-item {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: var(--hn-tile-size);
+  cursor: grab;
+  touch-action: none;
+  will-change: left, top;
+}
+.hn-item:active { cursor: grabbing; }
+.hn-item.hn-dragging { cursor: grabbing; z-index: 20; }
+.hn-tile {
+  width: var(--hn-tile-size);
+  height: var(--hn-tile-size);
+  border-radius: var(--hn-radius);
+  background: var(--hn-tile);
+  border: 1px solid var(--hn-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 19px;
+  color: var(--hn-text);
+  position: relative;
+  overflow: hidden;
+  transition: transform 180ms cubic-bezier(.2, .8, .2, 1), border-radius 200ms ease, box-shadow 180ms ease, border-color 160ms;
+}
+.hn-item:hover .hn-tile { transform: translateY(-3px); border-radius: calc(var(--hn-radius) + 6px); border-color: var(--hn-border-hi); box-shadow: 0 12px 26px rgba(0, 0, 0, 0.4); }
+.hn-item.hn-dragging .hn-tile { transform: translateY(-3px) scale(1.06) rotate(-2deg); border-radius: calc(var(--hn-radius) + 4px); border-color: var(--hn-border-hi); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55); }
+.hn-tile.hn-active { border-color: var(--hn-accent); box-shadow: 0 0 0 2px var(--hn-accent-soft); }
+.hn-canvas[data-drag="true"] .hn-item:not(.hn-dragging) { opacity: 0.78; }
+.hn-tile-name {
+  font-size: 11.5px;
+  color: var(--hn-muted);
+  max-width: calc(var(--hn-tile-size) + 14px);
+  text-align: center;
+  line-height: 1.25;
+  text-wrap: balance;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* folder loose tile (2x2 mini grid) */
+.hn-tile.hn-folder { background: var(--hn-card); display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 10px; }
+.hn-tile.hn-folder .hn-mini { border-radius: 7px; width: 100%; height: 100%; overflow: hidden; }
+
+/* per-tile chrome the overlay draws itself (ServerIcon has none) */
+.hn-tile .hn-unread-dot { position: absolute; left: 6px; bottom: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--text-primary); box-shadow: 0 0 0 2px var(--bg-app); }
+.hn-mention-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--hn-bg);
+  z-index: 2;
+}
+
+/* ---------- Folder popover (member servers) ---------- */
+.hn-folder-pop-backdrop { position: fixed; inset: 0; z-index: 55; }
+.hn-folder-pop {
+  position: fixed;
+  z-index: 56;
+  min-width: 184px;
+  max-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  isolation: isolate;
+  contain: layout style;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hn-folder-pop-title { font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--hn-faint); padding: 4px 8px 6px; }
+.hn-folder-pop-empty { font-size: 12px; color: var(--hn-faint); padding: 6px 8px; }
+.hn-folder-pop-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 6px 8px; border-radius: 8px; background: none; border: none;
+  cursor: pointer; font: inherit; color: var(--hn-text); text-align: left;
+}
+.hn-folder-pop-item:hover { background: var(--hn-tile-hi); }
+.hn-folder-pop-icon { width: 26px; height: 26px; border-radius: 6px; overflow: hidden; flex: none; display: block; }
+.hn-folder-pop-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* hint shown before first open is handled by the trigger, not here */

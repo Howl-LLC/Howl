@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self';" />
+  <title>Howl Overlay</title>
+  <link rel="stylesheet" href="/overlay/overlay.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { background: transparent; overflow: hidden; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="overlay-root"></div>
+  <script type="module" src="/overlay/main.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" aria-hidden="true">
+  <!-- Squircle background -->
+  <rect x="2" y="2" width="96" height="96" rx="24" ry="24" fill="#1e293b"/>
+  <!-- Head: circle. Shoulders: soft curve. Thin, refined stroke. -->
+  <circle cx="50" cy="38" r="13" stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+  <path
+    d="M31 56.5 Q31 51 50 51 Q69 51 69 56.5 L69 76 L31 76 Z"
+    stroke="#94a3b8"
+    stroke-width="1.5"
+    fill="none"
+    stroke-linejoin="round"
+  />
+</svg>

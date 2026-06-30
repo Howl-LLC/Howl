@@ -1,0 +1,12 @@
+name = "cdn-signer"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+# Replace with your own Cloudflare zone, route pattern, and R2 bucket name.
+[[routes]]
+pattern = "cdn.example.com/*"
+zone_name = "example.com"
+
+[[r2_buckets]]
+binding = "UPLOADS"
+bucket_name = "your-uploads-bucket"

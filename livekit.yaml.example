@@ -1,0 +1,58 @@
+# LiveKit SFU server configuration
+# Deploy this on your own bare-metal or VPS server or use with Docker Compose.
+# See: https://docs.livekit.io/home/self-hosting/deployment/
+#
+# ── PRODUCTION DEPLOYMENT (bare metal / VPS) ─────────────────────────────────
+#
+# 1. Generate real credentials (NEVER use devkey:secret in production):
+#      docker run --rm livekit/generate
+#    Copy the output key pair into the `keys:` section below AND into
+#    backend/.env as LIVEKIT_API_KEY and LIVEKIT_API_SECRET.
+#
+# 2. TLS / Domain setup for built-in TURN:
+#    - Assign a domain (e.g. livekit.example.com) pointing to your server.
+#    - Obtain a TLS cert (Let's Encrypt recommended):
+#        certbot certonly --standalone -d livekit.example.com
+#    - Set the cert/key paths below under `turn.cert_file` and `turn.key_file`.
+#    - This enables LiveKit's built-in TURN server with TLS on port 5349,
+#      which is critical for users behind restrictive firewalls/NAT.
+#
+# 3. Firewall rules:
+#    - TCP 7880  — LiveKit HTTP/WS API
+#    - TCP 7881  — LiveKit internal (optional, for multi-node)
+#    - TCP 5349  — TURN over TLS
+#    - UDP 50000-60000 — WebRTC media (RTP/RTCP)
+#
+# 4. Run LiveKit on your server:
+#      docker run -d --restart unless-stopped --name livekit \
+#        -p 7880:7880 -p 7881:7881 -p 5349:5349 \
+#        -p 50000-60000:50000-60000/udp \
+#        -v /path/to/livekit.yaml:/etc/livekit.yaml \
+#        -v /etc/letsencrypt:/etc/letsencrypt:ro \
+#        livekit/livekit-server --config /etc/livekit.yaml
+#
+# 5. Set LIVEKIT_URL in backend/.env:
+#      LIVEKIT_URL=wss://livekit.example.com:7880
+# ─────────────────────────────────────────────────────────────────────────────
+
+port: 7880
+
+rtc:
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+
+# Replace with your own generated key pair.
+# Generate with: docker run --rm livekit/generate
+keys:
+  YOUR_API_KEY: YOUR_API_SECRET
+
+turn:
+  enabled: true
+  tls_port: 5349
+  # Uncomment for production TLS:
+  # cert_file: /etc/letsencrypt/live/livekit.example.com/fullchain.pem
+  # key_file: /etc/letsencrypt/live/livekit.example.com/privkey.pem
+
+logging:
+  level: info

@@ -1,0 +1,6 @@
+{
+  "BACKEND_URL": "https://api.example.com",
+  "FRONTEND_ORIGIN": "https://app.example.com",
+  "SENTRY_DSN": "",
+  "CLOUDFLARE_ACCESS_TEAM_URL": ""
+}

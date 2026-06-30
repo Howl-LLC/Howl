@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Server" ADD COLUMN     "bannerZoom" INTEGER NOT NULL DEFAULT 100;
+
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "bannerZoom" INTEGER NOT NULL DEFAULT 100;

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>Howl - Repair</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #020617;
+    color: #f1f5f9;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  /* Subtle red-tinted gradient background */
+  .bg-gradient {
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 500px 500px at 50% 30%, rgba(239, 68, 68, 0.04) 0%, transparent 70%),
+      radial-gradient(ellipse 400px 400px at 60% 70%, rgba(34, 211, 238, 0.03) 0%, transparent 70%);
+  }
+
+  .noise {
+    position: fixed;
+    inset: 0;
+    opacity: 0.015;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    pointer-events: none;
+  }
+
+  /* App-region drag for Electron title bar */
+  .drag-region {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 38px;
+    -webkit-app-region: drag;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    padding: 48px;
+    max-width: 420px;
+    text-align: center;
+  }
+
+  /* Warning triangle icon container */
+  .icon-wrap {
+    width: 72px;
+    height: 72px;
+    border-radius: 20px;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .icon-wrap svg {
+    width: 32px;
+    height: 32px;
+    stroke: #ef4444;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .text-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .title {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .desc {
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(241, 245, 249, 0.45);
+  }
+
+  /* Buttons */
+  .buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 280px;
+  }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: none;
+    outline: none;
+  }
+
+  .btn svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .btn-primary {
+    background: #22d3ee;
+    color: #020617;
+  }
+
+  .btn-primary:hover {
+    background: #06b6d4;
+    box-shadow: 0 0 24px rgba(34, 211, 238, 0.25);
+  }
+
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(241, 245, 249, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f1f5f9;
+  }
+
+  .crash-info {
+    font-size: 11px;
+    color: rgba(241, 245, 249, 0.2);
+    letter-spacing: 0.03em;
+  }
+</style>
+</head>
+<body>
+  <div class="bg-gradient"></div>
+  <div class="noise"></div>
+  <div class="drag-region"></div>
+
+  <div class="container">
+    <div class="icon-wrap">
+      <!-- AlertTriangle icon -->
+      <svg viewBox="0 0 24 24">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+    </div>
+
+    <div class="text-group">
+      <div class="title">Howl ran into a problem</div>
+      <div class="desc">
+        The app crashed unexpectedly. You can try clearing the cache
+        to fix the issue, or reinstall for a fresh start.
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="btn-clear" class="btn btn-primary">
+        <svg viewBox="0 0 24 24">
+          <polyline points="23 4 23 10 17 10"/>
+          <polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        Clear Cache &amp; Restart
+      </button>
+
+      <button id="btn-reinstall" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Reinstall Howl
+      </button>
+    </div>
+
+    <div class="crash-info">
+      Howl detected repeated crashes and opened this repair screen.
+    </div>
+  </div>
+
+  <script src="./repair-screen.js"></script>
+</body>
+</html>

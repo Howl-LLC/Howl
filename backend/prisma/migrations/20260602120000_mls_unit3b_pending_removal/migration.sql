@@ -1,0 +1,13 @@
+-- DMParticipant.pendingRemoval (two-phase group-DM eviction).
+--
+-- NOTE: this migration was hand-trimmed. `prisma migrate dev` also wanted to
+-- DROP the `search_vector` FTS columns/indexes on Message/DMMessage and rename
+-- MemberRole FK constraints — those are managed outside the Prisma schema
+-- (see migration 20260408213119_add_search_vectors) and must NOT be touched.
+-- Only the single additive nullable column below is included.
+--
+-- Additive only: existing rows default to NULL (not pending removal). The
+-- column is set to now() on kick/leave and the row is deleted when the MLS
+-- Remove commit lands. Composite PK @@id([userId, dmChannelId]) is unchanged.
+-- Safe under concurrent writes.
+ALTER TABLE "DMParticipant" ADD COLUMN "pendingRemoval" TIMESTAMP(3);

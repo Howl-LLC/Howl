@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Switch Voice Channel</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="sdpi-wrapper">
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">Server</div>
+      <select class="sdpi-item-value" id="server-select">
+        <option value="">Loading...</option>
+      </select>
+    </div>
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">Channel</div>
+      <select class="sdpi-item-value" id="channel-select" disabled>
+        <option value="">Select a server first</option>
+      </select>
+    </div>
+    <div id="status" class="status-msg"></div>
+  </div>
+
+  <script>
+    var websocket, uuid, actionInfo, currentSettings;
+
+    function connectElgatoStreamDeckSocket(port, propertyInspectorUUID, registerEvent, info, inActionInfo) {
+      uuid = propertyInspectorUUID;
+      actionInfo = JSON.parse(inActionInfo);
+      currentSettings = actionInfo.payload.settings || {};
+
+      websocket = new WebSocket('ws://127.0.0.1:' + port);
+
+      websocket.addEventListener('open', function() {
+        websocket.send(JSON.stringify({ event: registerEvent, uuid: propertyInspectorUUID }));
+        // Request server list from the plugin
+        sendToPlugin({ type: 'list', resource: 'servers' });
+      });
+
+      websocket.addEventListener('message', function(ev) {
+        var m = JSON.parse(ev.data);
+        if (m.event === 'sendToPropertyInspector') {
+          handlePluginMessage(m.payload);
+        }
+      });
+    }
+
+    function setSettings(settings) {
+      currentSettings = settings;
+      websocket.send(JSON.stringify({
+        event: 'setSettings',
+        context: uuid,
+        payload: settings,
+      }));
+    }
+
+    function sendToPlugin(payload) {
+      websocket.send(JSON.stringify({
+        event: 'sendToPlugin',
+        action: actionInfo.action,
+        context: uuid,
+        payload: payload,
+      }));
+    }
+
+    function handlePluginMessage(payload) {
+      if (!payload) return;
+      var statusEl = document.getElementById('status');
+
+      if (payload.type === 'list-response') {
+        if (payload.resource === 'servers') {
+          populateServers(payload.data || []);
+        } else if (payload.resource === 'channels') {
+          populateChannels(payload.data || []);
+        }
+        statusEl.textContent = '';
+        statusEl.className = 'status-msg';
+      } else if (payload.type === 'list-error') {
+        statusEl.textContent = 'Error loading ' + payload.resource + ': ' + (payload.error || 'unknown');
+        statusEl.className = 'status-msg error';
+      }
+    }
+
+    function populateServers(servers) {
+      var select = document.getElementById('server-select');
+      select.innerHTML = '<option value="">-- Select Server --</option>';
+      servers.forEach(function(s) {
+        var opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        if (currentSettings.serverId === s.id) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      // If a server was previously selected, load its channels
+      if (currentSettings.serverId) {
+        sendToPlugin({ type: 'list', resource: 'channels', params: { serverId: currentSettings.serverId, voiceOnly: true } });
+      }
+    }
+
+    function populateChannels(channels) {
+      var select = document.getElementById('channel-select');
+      select.disabled = false;
+      select.innerHTML = '<option value="">-- Select Channel --</option>';
+      channels.forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        if (currentSettings.channelId === c.id) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      if (channels.length === 0) {
+        select.innerHTML = '<option value="">No voice channels found</option>';
+      }
+    }
+
+    // Event listeners
+    document.getElementById('server-select').addEventListener('change', function() {
+      var serverId = this.value;
+      var channelSelect = document.getElementById('channel-select');
+
+      if (!serverId) {
+        channelSelect.innerHTML = '<option value="">Select a server first</option>';
+        channelSelect.disabled = true;
+        setSettings({ serverId: '', channelId: '', channelName: '' });
+        return;
+      }
+
+      channelSelect.innerHTML = '<option value="">Loading...</option>';
+      channelSelect.disabled = true;
+      setSettings({ serverId: serverId, channelId: '', channelName: '' });
+      sendToPlugin({ type: 'list', resource: 'channels', params: { serverId: serverId, voiceOnly: true } });
+    });
+
+    document.getElementById('channel-select').addEventListener('change', function() {
+      var channelId = this.value;
+      var channelName = this.options[this.selectedIndex]
+        ? this.options[this.selectedIndex].textContent
+        : '';
+
+      setSettings({
+        serverId: currentSettings.serverId || '',
+        channelId: channelId,
+        channelName: channelName,
+      });
+    });
+  </script>
+  <script src="./shared/pair-panel.js"></script>
+</body>
+</html>

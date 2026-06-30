@@ -1,0 +1,32 @@
+{$DOMAIN} {
+	encode gzip
+
+	# API + realtime + uploads → backend
+	@backend path /api/* /socket.io/*
+	handle @backend {
+		reverse_proxy {$BACKEND_UPSTREAM} {
+			# Self-host has no Cloudflare edge, so strip client-supplied trust
+			# headers and pin X-Forwarded-For to the real peer. Without this,
+			# clientIp.ts trusts an inbound CF-Connecting-IP first and an
+			# attacker could rotate the IP rate-limit key at will.
+			header_up -CF-Connecting-IP
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# Everything else → the SPA (client-side routing)
+	handle {
+		# Security headers for the app shell. Helmet only rides on /api responses
+		# (proxied above); the static SPA document is served by Caddy directly, so
+		# set its clickjacking / HSTS / MIME-sniffing protections here.
+		header {
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
+			X-Frame-Options DENY
+			X-Content-Type-Options nosniff
+			Referrer-Policy strict-origin-when-cross-origin
+		}
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,0 +1,2409 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Howl LLC
+generator client {
+  provider            = "prisma-client"
+  output              = "../generated/prisma-client-v7"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  MODERATOR
+  ADMIN
+}
+
+model User {
+  id                    String    @id @default(uuid())
+  username              String
+  discriminator         String // 4-digit string (0001-9999), unique per username
+  email                 String    @unique
+  emailHash             String?   @unique
+  passwordHash          String? // nullable for SSO-only accounts
+  avatar                String?
+  banner                String?
+  bannerPositionY       Int       @default(50)
+  bannerZoom            Int       @default(100) // 100-200, percentage zoom level for banner
+  status                String    @default("offline")
+  // Optional; collected for age verification
+  dateOfBirth           DateTime?
+  createdAt             DateTime  @default(now())
+  stripeCustomerId      String?   @unique
+  stripeSubscriptionId  String?
+  stripePlan            String?
+  stripeStatus          String?
+  stripePeriodEnd       DateTime?
+  hasUsedTrial          Boolean   @default(false)
+  trialStartedAt        DateTime?
+  powerUpSubscriptionId String? // Stripe subscription ID for purchased power-up slots
+  powerUpPaidSlots      Int       @default(0)
+
+  // Refund tracking — one per category per account lifetime
+  hasUsedSubscriptionRefund Boolean @default(false)
+  hasUsedGiftRefund         Boolean @default(false)
+  hasUsedPowerUpRefund      Boolean @default(false)
+
+  // Email verification
+  emailVerified     Boolean   @default(false)
+  emailVerifyCode   String?
+  emailVerifyExpiry DateTime?
+
+  // MFA
+  mfaEnabled       Boolean @default(false)
+  mfaTotpSecret    String?
+  mfaPhone         String?
+  mfaPhoneVerified Boolean @default(false)
+  mfaRecoveryCodes Json?
+
+  // Password reset
+  passwordResetCode   String?
+  passwordResetExpiry DateTime?
+
+  // Notification preferences
+  notifyDesktop             Boolean @default(true)
+  notifyUnreadBadge         Boolean @default(true)
+  notifyTaskbarFlash        Boolean @default(true)
+  notifySoundNewMessage     Boolean @default(true)
+  notifySoundCurrentChannel Boolean @default(true)
+  notifySoundIncomingRing   Boolean @default(true)
+  notifyDisableAllSounds    Boolean @default(false)
+
+  // Social / privacy preferences
+  allowDmFromServerMembers       Boolean @default(true)
+  messageRequestsFilter          Boolean @default(false)
+  friendRequestsEveryone         Boolean @default(true)
+  friendRequestsFriendsOfFriends Boolean @default(true)
+  friendRequestsServerMembers    Boolean @default(true)
+
+  // Profile visibility controls
+  showOnlineStatus       String  @default("everyone") // "everyone" | "friends_only"
+  showJoinDate           Boolean @default(true)
+  showBadges             Boolean @default(true)
+  showCurrentActivity    String  @default("everyone") // "everyone" | "friends_only" | "nobody"
+  profilePrivate         Boolean @default(false)
+  shareDetectedGames     Boolean @default(true)
+  shareSteamActivity     Boolean @default(true)
+  shareSpotifyActivity   Boolean @default(true)
+  shareTwitchActivity    Boolean @default(true)
+  shareYouTubeActivity   Boolean @default(true)
+  activitySharingEnabled Boolean @default(true) // Master toggle
+  activityShareScope     String  @default("everyone") // "everyone" | "friends_small_servers" | "friends_only"
+  activitySourcePriority String  @default("steam,spotify,detected,custom,bio") // Comma-separated priority order
+  activityBio            String? // Short activity bio text (max 128 chars)
+  shareActivityBio       Boolean @default(true) // Toggle bio as activity source
+
+  serverMembers           ServerMember[]
+  dmParticipants          DMParticipant[]
+  friendRequestsSent      FriendRequest[] @relation("FromUser")
+  friendRequestsReceived  FriendRequest[] @relation("ToUser")
+  blockedUsers            Block[]         @relation("Blocker")
+  blockedBy               Block[]         @relation("Blocked")
+  sessions                Session[]
+  familyLinksAsParent     FamilyLink[]    @relation("FamilyParent")
+  familyLinksAsChild      FamilyLink[]    @relation("FamilyChild")
+  nameColor               String?
+  nameFont                String?
+  nameEffect              String?
+  avatarEffect            String?
+  lastDiscriminatorChange DateTime?
+
+  badges String[] @default([])
+  badgeDisplay Json? // { hidden: string[]; order: string[] } - user badge show/hide + reorder prefs
+
+  // Legal consent tracking
+  tosAcceptedAt           DateTime?
+  privacyPolicyAcceptedAt DateTime?
+  legalConsentVersion     String? // e.g. "2026-03-04" — tracks which policy version was accepted
+  needsOnboarding         Boolean   @default(false) // SSO users must complete ToS + DOB before first use
+
+  // Per ToS §3, users 13–17 must affirm parental/guardian consent at signup.
+  // Recorded so we can demonstrate (to NCMEC, to a regulator) that the
+  // user actively confirmed consent rather than silently passing an age gate.
+  // True for adults 18+ at signup (consent not required) and for 13–17 who
+  // ticked the box. Pre-existing accounts (created before this field) are
+  // grandfathered to false; the registration check only runs on new signups.
+  parentalConsentAcknowledged Boolean @default(false)
+
+  suspended     Boolean   @default(false)
+  suspendedAt   DateTime?
+  suspendReason String?
+
+  deactivated   Boolean   @default(false)
+  deactivatedAt DateTime?
+
+  role UserRole @default(USER)
+
+  backgroundImage   String?
+  backgroundOpacity Float?   @default(0.15)
+  backgroundBlur    Int?     @default(0)
+  bgGifAlwaysPlay   Boolean? @default(false)
+
+  // Email the user when a previously-unseen (hashIp, UA) tuple successfully
+  // logs in. Opt-out via `PATCH /api/users/me/settings`.
+  notifyOnNewDevice Boolean @default(true)
+
+  // Community / public-server discovery preferences. Hides this user from
+  // any aggregated discovery surfaces (member counts shown publicly already
+  // exclude opted-out users at the application layer).
+  discoveryOptOut Boolean @default(false)
+
+  settings               UserSettings?
+  ssoAccounts            SsoAccount[]
+  connectedApps          ConnectedApp[]
+  passkeyCredentials     PasskeyCredential[]
+  serverPowerUps         ServerPowerUp[]
+  giftsSent              GiftSubscription[]     @relation("GiftSender")
+  giftsReceived          GiftSubscription[]     @relation("GiftRecipient")
+  dataExportRequests     DataExportRequest[]
+  pushSubscriptions      PushSubscription[]
+  pendingTrialSetups     PendingTrialSetup[]
+  trialCardFingerprints  TrialCardFingerprint[]
+  refunds                Refund[]
+  gifFavorites           GifFavorite[]
+  activity               UserActivity?
+  activityHistory        ActivityHistory[]
+  secondaryActivity      UserSecondaryActivity?
+  showcaseLayout         Json? // Ordered array of showcase card objects
+  showcaseMobileLayout   Json? // Optional separate mobile layout (2-col grid); null = responsive reflow
+  steamPlaytimeData      Json? // Cached array of { name, appId, hours, iconUrl }
+  steamPlaytimeFetchedAt DateTime?
+  gameAccounts           GameAccount[]
+  dmKeyBundle            DmKeyBundle?
+  serverFolders          ServerFolder[]
+
+  // Device verification on new-device logins (for users without TOTP/passkey MFA).
+  trustedDevices     TrustedDevice[]
+  loginVerifications LoginVerification[]
+
+  // User-authored / user-uploaded back-references so Prisma can emit DB-level
+  // FK constraints with ON DELETE Cascade / SetNull. Without these the author/
+  // uploader columns would be bare strings with no FK, so deletes would have no
+  // referential-integrity guarantee and GDPR code would have to hand-enumerate
+  // every model. Cascade = content dies with the author; SetNull =
+  // audit/metadata survives (actor nulled).
+  messagesAuthored             Message[]
+  dmMessagesAuthored           DMMessage[]
+  threadsAuthored              Thread[]
+  threadMessagesAuthored       ThreadMessage[]
+  forumPostsAuthored           ForumPost[]
+  forumMessagesAuthored        ForumMessage[]
+  pollsAuthored                Poll[]
+  customEmojisUploaded         CustomEmoji[]
+  stickersUploaded             Sticker[]
+  soundsUploaded               SoundboardSound[]
+  messageReportsAsAuthor       MessageReport[]        @relation("MessageReportAuthor")
+  messageReportsAsReporter     MessageReport[]        @relation("MessageReportReporter")
+  serverReportsAsReporter      ServerReport[]         @relation("ServerReporter")
+  serverReportsReviewed        ServerReport[]         @relation("ServerReportReviewer")
+  auditLogEntries              AuditLog[]
+  channelPinnedMessages        ChannelPinnedMessage[]
+  dmPinnedMessages             DMPinnedMessage[]
+  serverEventsCreated          ServerEvent[]
+
+  // Per-user self-service audit trail (password/email/MFA/passkey/session/delete).
+  securityEvents UserSecurityEvent[]
+
+  // Apply-to-join applications
+  applications         ServerApplication[] @relation("ApplicationApplicant")
+  reviewedApplications ServerApplication[] @relation("ApplicationReviewer")
+
+  // "Verified by Howl" applications submitted by this user (as a server owner).
+  verificationRequestsSubmitted ServerVerificationRequest[] @relation("VerificationSubmitter")
+
+  // Admin T&S actions taken by this user against servers (suspend/hide/feature/
+  // verify and their inverses). SetNull on user delete keeps the server
+  // suspension audit trail intact when the actor account is removed.
+  serverSuspensionActions ServerSuspension[] @relation("ServerSuspensionActor")
+
+  // Self Roles — manual-approval queue. Cascade on applicant delete; SetNull
+  // on decider delete to preserve the audit trail.
+  roleClaimRequests  RoleClaimRequest[] @relation("RoleClaimRequestApplicant")
+  roleClaimDecisions RoleClaimRequest[] @relation("RoleClaimRequestDecider")
+
+  mlsKeyPackages MlsKeyPackage[]
+  mlsWelcomes    MlsWelcome[]    @relation("MlsWelcomeRecipient")
+  aikRotations   AikRotation[]
+  aikHead        AikHead?
+  dmHistoryArchive DmHistoryArchive[]
+  dmHistoryArchiveTombstones DmHistoryArchiveTombstone[]
+
+  @@unique([username, discriminator])
+  @@index([status])
+  @@index([username])
+}
+
+model GiftSubscription {
+  id                    String    @id @default(uuid())
+  code                  String    @unique
+  plan                  String // 'essential' | 'pro'
+  durationMonths        Int
+  senderId              String
+  sender                User      @relation("GiftSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId           String?
+  recipient             User?     @relation("GiftRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
+  recipientUsername     String? // username#disc to send to (resolved on creation or redemption)
+  status                String    @default("pending") // pending | redeemed | expired
+  createdAt             DateTime  @default(now())
+  redeemedAt            DateTime?
+  expiresAt             DateTime?
+  stripePaymentIntentId String?
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model TrialCardFingerprint {
+  id               String   @id @default(uuid())
+  fingerprint      String   @unique // Stripe card fingerprint hash
+  userId           String // User who used this card for trial
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId String? // Stripe customer ID for audit
+  plan             String // Which plan the trial was for
+  createdAt        DateTime @default(now())
+
+  @@index([fingerprint])
+  @@index([userId])
+}
+
+model PendingTrialSetup {
+  id                      String    @id @default(uuid())
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                    String // 'essential' | 'pro'
+  stripeCheckoutSessionId String    @unique // Stripe checkout session ID
+  stripeCustomerId        String
+  status                  String    @default("pending") // pending | started | card_ineligible | failed | expired
+  trialResult             String? // 'started' | 'card_ineligible' | 'failed' — set by webhook
+  resultMessage           String? // Human-readable message for frontend
+  paymentMethodId         String? // Stripe PM ID (set by webhook)
+  fingerprint             String? // Card fingerprint (set by webhook)
+  createdAt               DateTime  @default(now())
+  expiresAt               DateTime // 30 minutes from creation
+  processedAt             DateTime? // When webhook processed it
+
+  @@index([userId])
+  @@index([stripeCheckoutSessionId])
+  @@index([status])
+}
+
+model StripeEvent {
+  id          String   @id // Stripe event ID (evt_...)
+  processedAt DateTime @default(now())
+}
+
+model Refund {
+  id                       String    @id @default(uuid())
+  userId                   String
+  user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type                     String // 'subscription' | 'gift' | 'power_up'
+  stripeChargeId           String    @unique // One Refund row per charge — DB-level guard against double-refund.
+  stripeRefundId           String? // Stripe refund ID (re_...) — null until status='completed'.
+  amount                   Int // Amount in cents
+  currency                 String    @default("usd")
+  reason                   String? // User-provided reason (optional, max 500 chars)
+  initiatedBy              String // 'user' | 'admin'
+  adminId                  String? // Admin user ID if admin-initiated
+  adminOverride            Boolean   @default(false) // True if admin bypassed eligibility checks
+  adminOverrideReason      String? // Required when adminOverride is true
+  status                   String    @default("completed") // 'pending' | 'completed' | 'failed'. Saga: row inserted before Stripe call.
+  paymentMethodFingerprint String? // Captured from Stripe charge for cross-account abuse tracking.
+  createdAt                DateTime  @default(now())
+  completedAt              DateTime? // Set when status transitions to 'completed' or 'failed'.
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+// RefundUsage outlives the User row (no FK / cascade) so that account
+// deletion + re-signup doesn't reset per-category refund eligibility.
+// Eligibility checks query this table by emailHash, stripeCustomerId, and
+// paymentMethodFingerprint — any match blocks a fresh refund.
+model RefundUsage {
+  id                       String   @id @default(uuid())
+  type                     String // 'subscription' | 'gift' | 'power_up'
+  emailHash                String?
+  stripeCustomerId         String?
+  paymentMethodFingerprint String?
+  refundedAt               DateTime @default(now())
+  refundId                 String? // Original Refund.id for traceability
+
+  @@index([emailHash, type])
+  @@index([stripeCustomerId, type])
+  @@index([paymentMethodFingerprint, type])
+}
+
+model AdminUser {
+  id                  String          @id @default(uuid())
+  email               String          @unique
+  emailHash           String?         @unique
+  username            String
+  passwordHash        String
+  mfaTotpSecret       String?
+  mfaEnabled          Boolean         @default(false)
+  role                String          @default("admin")
+  forcePasswordChange Boolean         @default(false)
+  lastLoginAt         DateTime?
+  createdAt           DateTime        @default(now())
+  sessions            AdminSession[]
+  auditLogs           AdminAuditLog[]
+  passkeys            AdminPasskey[]
+}
+
+model AdminPasskey {
+  id           String    @id @default(uuid())
+  adminUserId  String
+  credentialId String    @unique
+  publicKey    String
+  counter      Int       @default(0)
+  deviceType   String    @default("singleDevice")
+  backedUp     Boolean   @default(false)
+  transports   String?
+  friendlyName String    @default("Admin Passkey")
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  adminUser    AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+}
+
+model AdminSession {
+  id               String    @id @default(uuid())
+  adminUserId      String
+  tokenHash        String    @unique
+  refreshTokenHash String?
+  deviceName       String    @default("Unknown device")
+  os               String    @default("Unknown")
+  ip               String?
+  lastActiveAt     DateTime  @default(now())
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+  adminUser        AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+  @@index([refreshTokenHash])
+  @@index([expiresAt])
+}
+
+model AdminAuditLog {
+  id           String    @id @default(uuid())
+  adminId      String
+  action       String
+  targetUserId String?
+  details      Json?
+  createdAt    DateTime  @default(now())
+  admin        AdminUser @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([adminId])
+  @@index([targetUserId])
+  @@index([createdAt])
+}
+
+model SsoAccount {
+  id          String  @id @default(uuid())
+  userId      String
+  provider    String // "google" | "apple" | "steam"
+  providerId  String
+  email       String?
+  displayName String? // Steam persona name, updated on each poll
+  avatarUrl   String? // Steam avatar URL, updated on each poll
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@index([userId])
+  @@index([provider])
+}
+
+model ConnectedApp {
+  id                   String    @id @default(uuid())
+  userId               String
+  provider             String // "spotify" (future: "twitch", "github", etc.)
+  providerId           String // e.g. Spotify user ID
+  displayName          String? // e.g. Spotify display name
+  avatarUrl            String? // e.g. Spotify profile image
+  accessToken          String // ENCRYPTED via encryptSecret()
+  refreshToken         String // ENCRYPTED via encryptSecret()
+  tokenExpiresAt       DateTime? // When the access token expires
+  scopes               String? // Comma-separated granted scopes
+  profileData          Json? // Cached profile stats (followers, karma, repos, etc.)
+  profileFetchedAt     DateTime? // When profile data was last fetched
+  nextProfileRefreshAt DateTime? // When to auto-refresh profile data
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@unique([userId, provider]) // One connection per provider per user
+  @@index([userId])
+  @@index([provider])
+}
+
+model PasskeyCredential {
+  id           String   @id @default(uuid())
+  userId       String
+  credentialId String   @unique
+  publicKey    String
+  counter      Int      @default(0)
+  deviceType   String   @default("singleDevice")
+  backedUp     Boolean  @default(false)
+  transports   String? // JSON array
+  createdAt    DateTime @default(now())
+  name         String   @default("My Passkey")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Session {
+  id                       String         @id @default(uuid())
+  userId                   String
+  tokenHash                String         @unique
+  refreshTokenHash         String?
+  previousRefreshTokenHash String?
+  deviceName               String         @default("Unknown device")
+  deviceType               String         @default("web") // web | desktop | mobile
+  os                       String         @default("Unknown")
+  // Hashed IP (sha256(ip)[:16]) — used by the new-device-detection flow so we
+  // can answer "have we seen this IP for this user before?" without storing
+  // raw IPs everywhere. Privacy-by-default for ordinary operations.
+  ip                       String?
+  // Raw IP + UA — populated at session create, purged to null after 90 days
+  // of inactivity by the cleanup worker (cleanup-lightweight task). Bounded
+  // retention is what makes this defensible under GDPR/CCPA: present long
+  // enough for CSAM/abuse investigations to use the IP+timestamp pair to
+  // resolve the subscriber via the ISP, gone before it becomes a long-term
+  // breach liability. CSAM-specific events permanently snapshot the IP onto
+  // MessageReport so retention there is independent of this 90-day window.
+  rawIp                    String?
+  userAgent                String?
+  lastActiveAt             DateTime       @default(now())
+  expiresAt                DateTime?
+  createdAt                DateTime       @default(now())
+  trustedDeviceId          String?
+  user                     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trustedDevice            TrustedDevice? @relation(fields: [trustedDeviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([userId, expiresAt])
+  @@index([userId, lastActiveAt])
+  @@index([refreshTokenHash])
+  @@index([expiresAt])
+  @@index([trustedDeviceId])
+}
+
+/// A browser/device that has cleared the new-device verification challenge.
+/// Subsequent password logins with a matching `howl_device_id` cookie skip
+/// the email code step. Only relevant for users without TOTP/passkey MFA —
+/// users with MFA always run the MFA challenge regardless of trust.
+model TrustedDevice {
+  id              String    @id @default(cuid())
+  userId          String
+  /// SHA-256 of the random base64url cookie value. The raw token only lives
+  /// in the httpOnly cookie on the client; the server never stores it.
+  tokenHash       String    @unique
+  /// UA-derived label e.g. "Chrome on Windows" / "Howl Desktop".
+  label           String?
+  deviceType      String? // web | desktop | mobile (mirrors Session.deviceType)
+  ipHashFirstSeen String?
+  ipHashLastSeen  String?
+  lastSeenAt      DateTime  @default(now())
+  /// Sliding 90-day expiry; bumped on every successful login from this device.
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions        Session[]
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Short-lived one-time-code row for the device-verification challenge.
+/// One active row per user; replaced on resend.
+model LoginVerification {
+  id         String    @id @default(cuid())
+  userId     String
+  /// bcrypt(12) hash of the 6-digit code.
+  codeHash   String
+  method     String // 'email' | 'sms'
+  /// Room to extend later — e.g. 'device' | 'step-up'.
+  purpose    String    @default("device")
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
+  ipHash     String?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+}
+
+model FamilyLink {
+  id                String             @id @default(uuid())
+  parentId          String
+  childId           String
+  status            String             @default("pending") // pending | active | revoked
+  unlinkRequestedAt DateTime?
+  createdAt         DateTime           @default(now())
+  parent            User               @relation("FamilyParent", fields: [parentId], references: [id], onDelete: Cascade)
+  child             User               @relation("FamilyChild", fields: [childId], references: [id], onDelete: Cascade)
+  restriction       FamilyRestriction?
+
+  @@unique([parentId, childId])
+  @@index([parentId])
+  @@index([childId])
+  @@index([childId, status])
+}
+
+model FamilyRestriction {
+  id                    String     @id @default(uuid())
+  familyLinkId          String     @unique
+  blockDmFromNonFriends Boolean    @default(false)
+  blockServerJoin       Boolean    @default(false)
+  dailyTimeLimitMinutes Int?
+  familyLink            FamilyLink @relation(fields: [familyLinkId], references: [id], onDelete: Cascade)
+}
+
+model Block {
+  id            String   @id @default(uuid())
+  blockerId     String
+  blockedUserId String
+  createdAt     DateTime @default(now())
+  blocker       User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedUser   User     @relation("Blocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedUserId])
+  @@index([blockerId])
+  @@index([blockedUserId])
+}
+
+model FriendRequest {
+  id         String   @id @default(uuid())
+  fromUserId String
+  toUserId   String
+  status     String   @default("pending") // pending | accepted | declined
+  createdAt  DateTime @default(now())
+  fromUser   User     @relation("FromUser", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("ToUser", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
+  @@index([toUserId, status])
+  @@index([fromUserId, status])
+}
+
+model Server {
+  id               String    @id @default(uuid())
+  name             String
+  icon             String?
+  banner           String?
+  bannerPositionY  Int       @default(50)
+  bannerZoom       Int       @default(100)
+  powerUpCount     Int       @default(0)
+  powerUpStatus    String?
+  powerUpPeriodEnd DateTime?
+  createdAt        DateTime  @default(now())
+
+  // Community / discovery fields.
+  // vanityUrl: globally unique lowercase slug (3-32, [a-z0-9-]+) used for
+  // /s/<slug> public preview links. Format validated at the API layer.
+  // vanityLastClaimedAt: timestamp of the last successful claim. Drives the
+  // 30-day cooldown between vanity-URL changes; only set on claim, never on
+  // release, so an owner can always release without arming a future timer.
+  // NULL for legacy rows (cooldown does not apply on the first claim after
+  // backfill — gives a one-time grace).
+  // featured / verified are admin-only T&S flags.
+  // hiddenFromDiscovery suppresses the server from /discover and public
+  // preview. suspendedAt/suspensionReason/suspendedById are the admin
+  // suspension trail; suspensionReason is exposed to the owner only.
+  // discoveryListingOverride is an admin-only bypass of the four
+  // quantitative discovery-listing gates (age, members, sustained
+  // engagement, retention) plus the icon/description asset gates. The
+  // community-mode safety floor (rules, MFA, automod, etc.) is NOT
+  // bypassable. Used for the official Howl server and other special-case
+  // listings; not a general "verified servers grandfather in" mechanism.
+  vanityUrl                String?   @unique
+  vanityLastClaimedAt      DateTime?
+  featured                 Boolean   @default(false)
+  verified                 Boolean   @default(false)
+  hiddenFromDiscovery      Boolean   @default(false)
+  discoveryListingOverride Boolean   @default(false)
+  suspendedAt              DateTime?
+  suspensionReason         String?
+  suspendedById            String?
+
+  members              ServerMember[]
+  channels             Channel[]
+  categories           ChannelCategory[]
+  invites              Invite[]
+  roles                ServerRole[]
+  autoRoles            ServerAutoRole[]
+  settings             ServerSettings?
+  bans                 ServerBan[]
+  auditLogs            AuditLog[]
+  customEmojis         CustomEmoji[]
+  stickers             Sticker[]
+  soundboardSounds     SoundboardSound[]
+  automodRules         AutomodRule[]
+  templates            ServerTemplate[]
+  powerUps             ServerPowerUp[]
+  events               ServerEvent[]
+  threads              Thread[]
+  stageSessions        StageSession[]
+  welcomeChannels      ServerWelcomeChannel[]
+  applications         ServerApplication[]
+  dailyStats           DailyServerStats[]
+  reports              ServerReport[]
+  // Self Roles — one picker per server (schema-enforced via unique on serverId).
+  rolePicker           RolePickerChannel?
+  roleClaimRequests    RoleClaimRequest[]
+  // Admin T&S audit feed (suspend/hide/feature/verify history).
+  suspensions          ServerSuspension[]
+  // Owner-initiated "Verified by Howl" applications (separate from auto-flag verify trail).
+  verificationRequests ServerVerificationRequest[]
+
+  @@index([powerUpCount])
+  @@index([createdAt])
+  // Discovery directory hot-path: every list query combines these flags.
+  @@index([featured, hiddenFromDiscovery, suspendedAt])
+}
+
+// Admin T&S audit trail (Community/Public Servers).
+//
+// Immutable history table for admin actions against servers: suspend/
+// unsuspend/hide/unhide/feature/unfeature/verify/unverify. Live state lives on
+// `Server.featured` / `Server.verified` / `Server.hiddenFromDiscovery` /
+// `Server.suspendedAt` columns; this table is the audit feed.
+//
+// `serverId` cascades — audit trail is meaningless without its server.
+// `actorId` SetNull on user delete so the trail outlives admin account
+// deletion (matches `AuditLog.actorId` invariant).
+model ServerSuspension {
+  id        String   @id @default(cuid())
+  serverId  String
+  action    String // suspend | unsuspend | hide | unhide | feature | unfeature | verify | unverify
+  actorId   String?
+  reason    String?
+  createdAt DateTime @default(now())
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  actor  User?  @relation("ServerSuspensionActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([serverId, createdAt])
+}
+
+model ServerPowerUp {
+  id        String   @id @default(uuid())
+  serverId  String
+  userId    String
+  createdAt DateTime @default(now())
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([serverId])
+}
+
+model ServerSettings {
+  id                    String  @id @default(uuid())
+  serverId              String  @unique
+  description           String?
+  verificationLevel     String  @default("none") // none | low | medium | high
+  contentFilter         String  @default("off") // off | scan_no_roles | scan_all
+  dmSpamFilter          Boolean @default(false)
+  welcomeMessage        String?
+  welcomeMessages       String[] @default([])
+  welcomeEnabled        Boolean @default(false)
+  onboardingEnabled     Boolean  @default(false)
+  welcomeChannelId      String?
+  welcomeChannel        Channel? @relation("ServerWelcomeChannel", fields: [welcomeChannelId], references: [id], onDelete: SetNull)
+  defaultNotifications  String  @default("all") // all | mentions_only
+  joinMethod            String  @default("invite_only") // invite_only | apply_to_join | discoverable
+  rules                 Json? // string[]
+  communityEnabled      Boolean @default(false)
+  discoveryEnabled      Boolean @default(false)
+  messageRetentionDays  Int? // null = forever, otherwise auto-delete messages older than N days
+  auditLogRetentionDays Int     @default(90) // auto-delete audit log entries older than N days
+  blockedNicknames      Json? // string[] – owner-configurable list of blocked nickname patterns
+  region                String  @default("automatic")
+
+  // Community / discovery fields.
+  // category/subcategory validated against a fixed enum at the API layer
+  // (kept as String so the enum can evolve without DB migrations). tags is
+  // a normalized-lowercase string[] capped at 5 (validated at the API layer).
+  // bannerSplash is a separate banner used on public preview pages (distinct
+  // from the in-app banner). longDescription is up to 4 KB of markdown shown
+  // on /s/<slug>. discoverableSince marks first opt-in to discovery (used
+  // by "new this week" surfaces and to dampen rank churn).
+  // applicationQuestions is a {id, prompt, type, required, maxLength}[] used
+  // by apply-to-join servers (shape validated at the API layer).
+  // rulesChannelId/updatesChannelId are eligibility pointers used by the
+  // community-mode helper.
+  rulesChannelId           String?
+  updatesChannelId         String?
+  category                 String?
+  subcategory              String?
+  tags                     Json? // string[] (≤5, normalized lowercase)
+  language                 String    @default("en") // ISO 639-1
+  bannerSplash             String?
+  longDescription          String? // up to 4 KB
+  discoverableSince        DateTime?
+  welcomeScreenEnabled     Boolean   @default(false)
+  welcomeScreenDescription String?
+  applicationQuestions     Json? // {id, prompt, type, required, maxLength}[]
+
+  // Discovery-listing eligibility cache. Set to first-eligible timestamp when
+  // size/age/activity thresholds (evaluateDiscoveryEligibility) are met; cleared
+  // when the server falls back below the bar. Discovery query filters on this
+  // column so ineligible servers stop appearing without a per-row recompute.
+  // Recomputed on-demand (owner views eligibility panel) and nightly via the
+  // discovery-eligibility-refresh worker.
+  eligibleForDiscoverySince DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+}
+
+model ServerBan {
+  id         String   @id @default(uuid())
+  serverId   String
+  userId     String
+  reason     String?
+  bannedById String
+  createdAt  DateTime @default(now())
+  server     Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, userId])
+  @@index([serverId])
+  @@index([userId])
+  @@index([bannedById])
+}
+
+// Apply-to-join: pending/decided application to a community server.
+// Created when joinMethod === 'apply_to_join'. Reviewers (members with the
+// kickMembers permission, plus owners) accept or reject; on accept the
+// applicant becomes a ServerMember.
+model ServerApplication {
+  id           String    @id @default(uuid())
+  serverId     String
+  userId       String
+  answers      Json // [{ questionId, value }] — historical rows may use { answer }
+  status       String    @default("pending") // pending | accepted | rejected | withdrawn
+  reviewerId   String?
+  decidedAt    DateTime?
+  // Free-text message included in the decision email (accept or reject).
+  // Visible to the applicant. Capped client-side at 500 chars.
+  decisionNote String?
+  // Moderator-only note, never sent to the applicant — used for internal
+  // bookkeeping ("checked their other server", "vouched by @alice", etc.).
+  // Capped at 1000 chars.
+  internalNote String?
+  createdAt    DateTime  @default(now())
+  server       Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user         User      @relation("ApplicationApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer     User?     @relation("ApplicationReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@unique([serverId, userId, status]) // prevents duplicate pending applications
+  @@index([serverId, status, createdAt])
+  @@index([userId, status])
+}
+
+// "Verified by Howl" application — owner-initiated request for the blue
+// verified badge (`Server.verified=true`). Reviewed by Howl admins through
+// the admin queue. Approval atomically flips `Server.verified=true` and
+// writes to `ServerSuspension` (action='verify'); rejection leaves the
+// flag untouched and triggers a 30-day resubmission cooldown.
+//
+// `reviewerId` is intentionally a plain String (no FK) because admins live
+// in the `AdminUser` table, not `User`. Mirrors `ServerSuspension.actorId`
+// nullability — admin attribution is recorded in `AdminAuditLog`.
+//
+// Structured proof methods (domain-email code, social-account token) are
+// intentionally omitted from v1; admin manually verifies the org via the
+// supplied website URL + their own judgment.
+model ServerVerificationRequest {
+  id               String    @id @default(uuid())
+  serverId         String
+  submittedById    String // server owner who submitted
+  organizationName String
+  websiteUrl       String
+  additionalNotes  String? // free text up to 2KB; e.g. "we run @foo on Twitter"
+  status           String    @default("pending") // pending | approved | rejected | withdrawn
+  reviewerId       String? // AdminUser.id (loose; not an FK)
+  decidedAt        DateTime?
+  decisionNote     String? // shown to owner on rejection email + UI
+  createdAt        DateTime  @default(now())
+
+  server    Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  submitter User   @relation("VerificationSubmitter", fields: [submittedById], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, submittedById, status]) // prevents duplicate pending requests per submitter
+  @@index([status, createdAt]) // admin queue hot path
+  @@index([serverId, status]) // owner status panel + cooldown lookup
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  serverId   String
+  // Nullable so the row survives when the actor is deleted (moderator audit
+  // trail must outlive reporter/actor self-delete).
+  actorId    String?
+  action     String // server_update | member_kick | member_ban | member_unban | role_create | role_update | role_delete | channel_create | invite_create | emoji_create | emoji_delete | sticker_create | sticker_delete | sound_create | sound_delete | automod_create | automod_update | automod_delete | settings_update | template_create | template_update | template_delete
+  targetType String? // user | role | channel | emoji | sticker | sound | rule | template | settings
+  targetId   String?
+  details    Json?
+  createdAt  DateTime @default(now())
+  server     Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([serverId, createdAt])
+  @@index([serverId, action])
+  @@index([actorId])
+}
+
+model CustomEmoji {
+  id           String   @id @default(uuid())
+  serverId     String
+  name         String
+  imageUrl     String
+  uploadedById String
+  createdAt    DateTime @default(now())
+  server       Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  // Emoji is user-attributed content; dies with its uploader.
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+}
+
+model Sticker {
+  id           String   @id @default(uuid())
+  serverId     String
+  name         String
+  imageUrl     String
+  description  String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+  server       Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  // Sticker is user-attributed content; dies with its uploader.
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+}
+
+model SoundboardSound {
+  id           String   @id @default(uuid())
+  serverId     String
+  name         String
+  audioUrl     String
+  emoji        String?
+  volume       Float    @default(1.0)
+  uploadedById String
+  createdAt    DateTime @default(now())
+  server       Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  // Sound is user-attributed content; dies with its uploader.
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+}
+
+model AutomodRule {
+  id        String   @id @default(uuid())
+  serverId  String
+  name      String
+  type      String // keyword_filter | spam_filter | mention_spam | link_filter
+  enabled   Boolean  @default(true)
+  config    Json? // type-specific: { keywords: string[], action: string } etc.
+  createdAt DateTime @default(now())
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId, enabled])
+}
+
+model ServerTemplate {
+  id               String   @id @default(uuid())
+  serverId         String
+  name             String
+  description      String?
+  code             String   @unique @default(uuid())
+  channelSnapshot  Json? // Array of { name, type }
+  roleSnapshot     Json? // Array of { name, color, permissions }
+  categorySnapshot Json? // Array of { name, position, channels: Array<{ name, type, position }> }
+  settingsSnapshot Json? // { description?, verificationLevel?, defaultNotifications? }
+  createdById      String
+  usageCount       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  server           Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+}
+
+model ServerRole {
+  id                     String            @id @default(uuid())
+  serverId               String
+  name                   String
+  color                  String            @default("#99aab5")
+  style                  String            @default("solid") // solid | gradient | holographic
+  icon                   String?
+  position               Int               @default(0)
+  permissions            Json? // Record<string, boolean>
+  displaySeparately      Boolean           @default(false)
+  allowMention           Boolean           @default(false)
+  // When true, the role is eligible to appear in the server's role-picker
+  // channel. Admin opt-in via Server Settings → Roles → Display tab. Setting
+  // to false on a role already in the picker doesn't auto-revoke from existing
+  // holders — the picker entry just hides on next refresh.
+  selfAssignable         Boolean           @default(false)
+  // A member holding ANY role with this flag cannot claim ANY self-role
+  // (server-enforced). Blocks NEW claims only; does NOT strip held roles.
+  blocksSelfRoles        Boolean           @default(false)
+  // DISPLAY-only strip for non-mods (role list, member list, myRoles, mention
+  // typeahead, realtime events). Mods (manageRoles | owner | administrator)
+  // always see it. A hidden role's permissions STILL apply (myPermissions is the
+  // full union, server-side; hidden never touches authorization).
+  hidden                 Boolean           @default(false)
+  linkedRoleRequirements Json?
+  locked                 Boolean           @default(false)
+  isEveryone             Boolean           @default(false) // server-wide baseline; applied implicitly to every member
+  createdAt              DateTime          @default(now())
+  server                 Server            @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  members                ServerMember[]
+  memberRoles            MemberRole[]
+  pickerEntries          RolePickerEntry[]
+  autoRoles              ServerAutoRole[]
+
+  @@index([serverId])
+  @@index([serverId, isEveryone])
+}
+
+// Roles automatically granted to a member on join / onboarding completion.
+// Composite-PK join table between Server and ServerRole. Cascade-deleted with
+// either parent.
+model ServerAutoRole {
+  serverId String
+  roleId   String
+  server   Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  role     ServerRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([serverId, roleId])
+  @@index([serverId])
+}
+
+model Invite {
+  id          String    @id @default(uuid())
+  code        String    @unique
+  serverId    String
+  createdById String
+  expiresAt   DateTime?
+  maxUses     Int?
+  useCount    Int       @default(0)
+  temporary   Boolean   @default(false) // grant temporary membership (kicked on disconnect unless role assigned)
+  label       String?
+  shareable   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@index([expiresAt])
+  @@index([createdById])
+  @@index([serverId, createdAt])
+  @@index([serverId, shareable])
+}
+
+model ServerMember {
+  userId                          String
+  serverId                        String
+  role                            String       @default("member") // legacy: owner | member; when roleId set, role name mirrors ServerRole.name
+  roleId                          String?
+  joinedAt                        DateTime     @default(now())
+  onboardingCompletedAt           DateTime?
+  nickname                        String?
+  serverAvatar                    String?
+  serverBanner                    String?
+  allowDirectMessages             Boolean? // null = use global, true/false = per-server override
+  shareActivity                   Boolean? // null = use global, true/false = per-server activity override
+  isTemporary                     Boolean      @default(false) // legacy: was used by disconnect-grace kick (removed). Kept for rollback safety; drop in a follow-up after temporaryExpiresAt is verified live.
+  temporaryExpiresAt              DateTime? // snapshot of the originating invite's expiresAt; cleanup worker removes the member when it elapses, unless a role is assigned
+  serverMuted                     Boolean      @default(false)
+  serverDeafened                  Boolean      @default(false)
+  // Channel IDs the user has accepted the 18+ gate for. Bounded by
+  // count of age-restricted channels in this server. Cleared when the
+  // ServerMember row is deleted (leave/kick/ban) — natural cascade.
+  // Channel-delete cleanup is handled in the channel-delete route.
+  acceptedAgeRestrictedChannelIds String[]     @default([])
+  timeoutUntil                    DateTime?
+  timeoutReason                   String?
+  timedOutById                    String?
+  // Per-user ordering of this server in the far-left sidebar. Lower = higher
+  // in the list. Replaces the previous localStorage-only scheme so the order
+  // follows the user across devices, tabs, and sessions. Values are not
+  // unique across (userId,_) — the client emits arbitrary integers and the
+  // sort is just `ORDER BY position ASC, joinedAt ASC`.
+  //
+  // Default is a deliberately huge number so new memberships (server create,
+  // invite accept, application accept) land at the bottom of the user's
+  // sidebar rather than colliding with their hand-picked top slot at 0.
+  // The reorder endpoint writes 0..N-1, so this default never collides with
+  // an actively-positioned server.
+  position                        Int          @default(1000000)
+  user                            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server                          Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  serverRole                      ServerRole?  @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  memberRoles                     MemberRole[]
+
+  @@id([userId, serverId])
+  @@index([roleId])
+  @@index([serverId])
+  @@index([serverId, joinedAt])
+  @@index([serverId, userId])
+  @@index([userId, isTemporary])
+  @@index([userId, position])
+  @@index([temporaryExpiresAt])
+}
+
+model MemberRole {
+  userId     String
+  serverId   String
+  roleId     String
+  assignedAt DateTime @default(now())
+  assignedBy String? // userId that granted it; null for migration-seeded rows
+
+  member ServerMember @relation(fields: [userId, serverId], references: [userId, serverId], onDelete: Cascade)
+  role   ServerRole   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, serverId, roleId])
+  @@index([userId, serverId])
+  @@index([roleId])
+  @@index([serverId, roleId])
+}
+
+model ChannelCategory {
+  id                  String                       @id @default(uuid())
+  serverId            String
+  name                String
+  position            Int                          @default(0)
+  isPrivate           Boolean                      @default(false)
+  createdAt           DateTime                     @default(now())
+  server              Server                       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  channels            Channel[]
+  permissionOverrides CategoryPermissionOverride[]
+
+  @@index([serverId])
+  @@index([serverId, position])
+}
+
+model Channel {
+  id                  String                      @id @default(uuid())
+  serverId            String
+  name                String
+  description         String? // optional topic/description for text channels
+  type                String                      @default("text") // "text" | "voice" | "stage" | "forum" | "role_picker"
+  slowMode            Int                         @default(0) // seconds between messages per user (0 = off)
+  categoryId          String?
+  position            Int                         @default(0)
+  isPrivate           Boolean                     @default(false)
+  ageRestricted       Boolean                     @default(false)
+  userLimit           Int                         @default(0) // 0 = unlimited, voice channels
+  hideAfterInactivity Int? // days until threads auto-hide, null = never
+  postGuidelines      String? // forum: markdown text shown before posting
+  defaultReaction     String? // forum: emoji for auto-reaction
+  defaultSortOrder    String                      @default("recent_activity") // forum: 'recent_activity' | 'creation_date'
+  defaultLayout       String                      @default("list") // forum: 'list' | 'gallery'
+  requireTags         Boolean                     @default(false) // forum: require tag selection on posts
+  postSlowMode        Int                         @default(0) // forum: seconds between posts per user
+  messageSlowMode     Int                         @default(0) // forum: seconds between messages in posts
+  createdAt           DateTime                    @default(now())
+  server              Server                      @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  category            ChannelCategory?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  pinnedMessages      ChannelPinnedMessage[]
+  messages            Message[]
+  threads             Thread[]
+  stageSessions       StageSession[]
+  permissionOverrides ChannelPermissionOverride[]
+  forumPosts          ForumPost[]
+  forumTags           ForumTag[]
+  welcomeEntries      ServerWelcomeChannel[]
+  welcomeForSettings  ServerSettings[]            @relation("ServerWelcomeChannel")
+  rolePicker          RolePickerChannel?
+
+  @@index([serverId])
+  @@index([serverId, type])
+  @@index([type])
+  @@index([categoryId])
+  @@index([serverId, position])
+}
+
+model ChannelPinnedMessage {
+  id         String   @id @default(uuid())
+  channelId  String
+  messageId  String
+  // Nullable so the pin survives when its pinner is deleted (audit metadata —
+  // someone did pin this, even if that someone is gone).
+  pinnedById String?
+  pinnedAt   DateTime @default(now())
+  channel    Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  pinnedBy   User?    @relation(fields: [pinnedById], references: [id], onDelete: SetNull)
+
+  @@unique([channelId, messageId])
+  @@index([channelId])
+}
+
+// Discord-style welcome screen entries (public/community-servers).
+// Each row is one of up to 5 channels surfaced to new members on first join.
+// The on/off toggle and the surrounding description live on `ServerSettings`
+// (welcomeScreenEnabled, welcomeScreenDescription); this model is the
+// curated channel list. Cascade deletes propagate from both Server and
+// Channel so dropping either side cleans up dangling welcome rows.
+model ServerWelcomeChannel {
+  id          String   @id @default(uuid())
+  serverId    String
+  channelId   String
+  description String // ≤ 200 chars — explains what the channel is for
+  emoji       String? // ≤ 16 chars — emoji shortcode or unicode glyph
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, channelId])
+  @@index([serverId, position])
+}
+
+model Message {
+  id                    String            @id @default(uuid())
+  channelId             String
+  authorId              String
+  content               String
+  type                  String            @default("message") // "message" | "system"
+  systemPayload         Json? // e.g. { kind: "pin", messageId: "..." }
+  replyToMessageId      String?
+  replyToMessage        Message?          @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies               Message[]         @relation("MessageReplies")
+  attachmentUrl         String? // e.g. /api/uploads/uuid.ext
+  attachmentName        String? // original filename
+  attachmentContentType String?
+  attachmentWidth       Int?
+  attachmentHeight      Int?
+  // Sender-set per-attachment spoiler marker. Always blurs until clicked.
+  // Distinct from Channel.ageRestricted — spoilers are not NSFW gates.
+  attachmentIsSpoiler   Boolean           @default(false)
+  // Alt text for accessibility (screen readers). Sender-supplied, max 500
+  // chars enforced via Zod. Empty / null = no alt rendered.
+  attachmentAlt         String?
+  forwarded             Boolean           @default(false)
+  createdAt             DateTime          @default(now())
+  editedAt              DateTime?
+  channel               Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  // Server-channel messages die with their author. Server admins retain
+  // moderation visibility of messages only while the author exists;
+  // deleted-user messages are legally wiped rather than left orphaned.
+  author                User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions             MessageReaction[]
+
+  @@index([channelId])
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([channelId, createdAt])
+  @@index([channelId, id])
+  @@index([authorId, createdAt])
+  @@index([authorId, channelId])
+  @@index([replyToMessageId])
+  @@index([attachmentUrl(ops: raw("text_pattern_ops"))])
+}
+
+model DMChannel {
+  id             String            @id @default(uuid())
+  isGroup        Boolean           @default(false)
+  name           String?
+  icon           String?
+  encrypted      Boolean           @default(false)
+  ownerId        String?           // group-DM owner (creator); null on 1:1 + legacy rows pre-backfill
+  createdAt      DateTime          @default(now())
+  participants   DMParticipant[]
+  messages       DMMessage[]
+  pinnedMessages DMPinnedMessage[]
+  mlsGroups      MlsGroup[]
+  historyArchive DmHistoryArchive[]
+  historyArchiveTombstones DmHistoryArchiveTombstone[]
+}
+
+model DMPinnedMessage {
+  id          String    @id @default(uuid())
+  dmChannelId String
+  messageId   String
+  // Nullable so the pin survives pinner deletion (audit metadata).
+  pinnedById  String?
+  pinnedAt    DateTime  @default(now())
+  dmChannel   DMChannel @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+  pinnedBy    User?     @relation(fields: [pinnedById], references: [id], onDelete: SetNull)
+
+  @@unique([dmChannelId, messageId])
+  @@index([dmChannelId])
+}
+
+model DMParticipant {
+  userId       String
+  dmChannelId  String
+  joinedAt     DateTime  @default(now())
+  lastReadAt   DateTime?
+  pinned       Boolean   @default(false)
+  pinnedAt     DateTime?
+  mentionCount Int       @default(0)
+  // Two-phase group-DM eviction. Set to now() by the kick/leave routes to mark
+  // a participant for removal; the row survives until the MLS Remove commit
+  // lands, at which point the commit handler deletes it. A pendingRemoval row
+  // is excluded from message/commit fan-out. Nullable, additive, no backfill
+  // (existing rows = null = not pending).
+  pendingRemoval DateTime?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dmChannel    DMChannel @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+
+  @@id([userId, dmChannelId])
+  @@index([dmChannelId])
+  @@index([dmChannelId, userId])
+}
+
+model DMMessage {
+  id                    String              @id @default(uuid())
+  dmChannelId           String
+  authorId              String
+  content               String
+  contentIv             String?
+  encryptionVersion     Int                 @default(1)
+  type                  String              @default("message") // "message" | "system"
+  systemPayload         Json? // e.g. { kind: "pin", messageId: "..." }
+  replyToMessageId      String? // when set, this message is a reply to another in the same DM
+  replyToMessage        DMMessage?          @relation("DMMessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies               DMMessage[]         @relation("DMMessageReplies")
+  attachmentUrl         String?
+  attachmentName        String?
+  attachmentContentType String?
+  attachmentWidth       Int?
+  attachmentHeight      Int?
+  // Sender-set per-attachment spoiler marker (DM E2EE: plaintext metadata
+  // the client volunteers; server stores+forwards, never inspects ciphertext).
+  attachmentIsSpoiler   Boolean             @default(false)
+  // Alt text for accessibility, sender-supplied, max 500 chars. DM E2EE:
+  // plaintext metadata, no content inspection.
+  attachmentAlt         String?
+  forwarded             Boolean             @default(false) // when true, message was forwarded from another source
+  createdAt             DateTime            @default(now())
+  editedAt              DateTime?
+  dmChannel             DMChannel           @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+  // DM messages die with their author. The server sees only ciphertext for
+  // Secure DMs, so cascade is strictly a referential-integrity +
+  // GDPR-completeness win (no content inspection is introduced here).
+  author                User                @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions             DMMessageReaction[]
+
+  @@index([dmChannelId])
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([dmChannelId, createdAt])
+  @@index([dmChannelId, id])
+  @@index([authorId, createdAt])
+  @@index([replyToMessageId])
+  @@index([attachmentUrl(ops: raw("text_pattern_ops"))])
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+}
+
+model DMMessageReaction {
+  id        String    @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime  @default(now())
+  message   DMMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+}
+
+model UserSettings {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  data      Json
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MessageReport {
+  id                          String    @id @default(uuid())
+  // reporterId nullable so reports survive reporter self-delete. The
+  // moderator-audit trail must outlive the reporter (prevents a bad actor
+  // from wiping evidence by deleting their account).
+  reporterId                  String?
+  messageType                 String // "dm" or "channel"
+  messageId                   String
+  channelId                   String?
+  dmChannelId                 String?
+  // Was non-null + Cascade. Now nullable + SetNull so a CSAM uploader cannot
+  // erase evidence by self-deleting (18 USC §2258A(h) preservation). The
+  // human-readable identity that *was* attached at report time lives in the
+  // *Snapshot fields below — those survive the user delete and are what
+  // moderators / NCMEC actually need.
+  authorId                    String?
+  // Identity snapshot taken when the report is created (auto-flag) or first
+  // actioned. Frozen on insert; never updated after the User row is gone.
+  authorUsernameSnapshot      String?
+  authorDiscriminatorSnapshot String?
+  authorEmailHashSnapshot     String? // hashEmail() — useful for cross-account linkage
+  authorRegisteredAtSnapshot  DateTime?
+  // Forensic capture. Two distinct evidentiary qualities live in these fields:
+  //   - At auto-flag block: the IP/UA of the actual upload request — the IP
+  //     that committed the offense. Gold standard.
+  //   - At admin-action time for user-reported CSAM: best-effort lookup of
+  //     the session that was active around the message timestamp (within
+  //     the 90-day Session.rawIp retention window). Null if the window has
+  //     expired by the time T&S confirms.
+  // `evidenceSource` records which path populated these so an investigator
+  // reading the report later doesn't conflate the two.
+  uploaderIp                  String?
+  uploaderUserAgent           String?
+  // Exact-match hash. PDQ catches near-duplicates (rotation/recompression);
+  // SHA-256 is what NCMEC and other ESPs use for cross-provider exact matches.
+  sha256                      String?
+  // Intended target context — captured at auto-flag time from the upload
+  // request's source/sourceId query params (which channel/DM/avatar slot the
+  // user was attempting to attach to). Useful for NCMEC routing decisions
+  // and pattern recognition across reports. Null on user-reported content
+  // because we already have channelId/dmChannelId on those rows.
+  intendedSource              String?
+  intendedSourceId            String?
+  // 'upload-block'              — captured synchronously at the upload
+  //                               request; uploaderIp/UA are the offending
+  //                               IP/UA. Highest evidentiary quality.
+  // 'action-time-lookup'        — populated when admin transitions a
+  //                               user-reported CSAM to actioned; lookup
+  //                               found a session active around the
+  //                               message's timestamp, snapshot took.
+  // 'action-time-unavailable'   — same trigger, but the 90-day Session
+  //                               retention window had expired or no
+  //                               matching session existed. uploaderIp/UA
+  //                               will be null. Surface this in admin UI
+  //                               so moderators know they're filing with
+  //                               degraded evidence rather than assuming
+  //                               IP/UA were captured.
+  evidenceSource              String?
+  evidenceCapturedAt          DateTime?
+  // Set when CSAM evidence preservation begins. Distinct from createdAt
+  // because we want a single "evidence preserved since" timestamp regardless
+  // of whether the row originated as auto-flag or as a user report.
+  preservedAt                 DateTime?
+  content                     String // decrypted content at time of report (for E2E DMs)
+  attachmentUrl               String?
+  reason                      String // "spam" | "harassment" | "csam" | "violence" | "other"
+  details                     String? // optional description from reporter
+  status                      String    @default("pending") // pending | reviewed | actioned | dismissed
+  reviewedAt                  DateTime?
+  reviewedBy                  String? // admin user ID
+  reviewNotes                 String?
+  actionTaken                 String? // "none" | "warn" | "delete" | "ban" | "ncmec_report"
+  ncmecReportId               String?
+  contentSource               String    @default("server") // "server" | "reporter_disclosed" | "unavailable"
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  reporter                    User?     @relation("MessageReportReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  author                      User?     @relation("MessageReportAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([reporterId])
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([reason, preservedAt])
+  @@index([messageType, status])
+  @@index([status, createdAt])
+}
+
+// Server-level abuse report (Community/Public Servers).
+// Lets a member flag an entire server (spam, harassment hub, illegal content,
+// undeclared NSFW, impersonation). Reporter identity is preserved across
+// reporter self-delete via SetNull so the moderator audit trail survives.
+// Distinct from MessageReport (per-message); both feed admin T&S queues.
+model ServerReport {
+  id          String    @id @default(uuid())
+  serverId    String
+  // Nullable so the report survives reporter self-delete — same invariant as
+  // MessageReport.reporterId. T&S queue must outlive the reporter.
+  reporterId  String?
+  reason      String // "spam" | "harassment" | "illegal" | "nsfw_undeclared" | "impersonation" | "other"
+  details     String? // optional reporter-supplied context, ≤2000 chars
+  status      String    @default("pending") // pending | reviewed | actioned | dismissed
+  actionTaken String? // "none" | "warn" | "hide" | "suspend" | "remove"
+  reviewerId  String?
+  reviewedAt  DateTime?
+  reviewNote  String?
+  createdAt   DateTime  @default(now())
+  server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  reporter    User?     @relation("ServerReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  reviewer    User?     @relation("ServerReportReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([serverId, status])
+  @@index([status, createdAt])
+  @@index([reporterId])
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model DataExportRequest {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        String    @default("pending") // pending | processing | ready | expired | failed
+  downloadToken String    @unique @default(cuid())
+  filePath      String?
+  expiresAt     DateTime?
+  error         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model ImageHash {
+  id         String   @id @default(uuid())
+  // PDQ 256-bit hex string. Nullable because non-image uploads (video,
+  // audio, PDF, zip) don't have a perceptual hash but still get a row so
+  // their SHA-256 is recorded for cross-provider exact-match in NCMEC
+  // reports. PDQ-matching code paths must filter `hash: { not: null }`.
+  hash       String?
+  // SHA-256 of the raw upload bytes, hex. Captured for every non-encrypted
+  // upload regardless of media type. PDQ matches near-duplicates of images;
+  // SHA-256 is the cross-provider exact-match used by NCMEC and other ESPs
+  // for any media type they share hash lists for.
+  sha256     String?
+  uploaderId String
+  filename   String
+  source     String // "channel" | "dm" | "avatar" | "banner"
+  sourceId   String? // channelId or dmChannelId
+  flagMatch  Boolean  @default(false)
+  // True when this upload was an encrypted (E2E DM) blob that skipped
+  // server-side content safety (MIME/EXIF/decompression-bomb/NCMEC/PDQ).
+  // The channel-message send path refuses to attach such a blob to a plaintext,
+  // multi-recipient server channel (see routes/messages.ts). Encrypted uploads
+  // get a provenance-only row (hash + sha256 null) so this flag is queryable.
+  encrypted  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([hash])
+  @@index([sha256])
+  @@index([uploaderId])
+  // Per-send provenance lookup by stored filename (channel attach-time check).
+  @@index([filename])
+  @@index([flagMatch])
+  @@index([createdAt])
+}
+
+model FlaggedHash {
+  id        String   @id @default(uuid())
+  hash      String   @unique
+  reason    String // "csam" | "illegal" | "other"
+  source    String   @default("manual") // "manual" | "thorn" | "ncmec"
+  addedById String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  // Hashes ingested as part of an external corpus (NCMEC / Thorn / IWF) belong
+  // to a FlaggedHashSnapshot and are only active when their snapshot is.
+  // Manually-added hashes have snapshotId=null and are always active.
+  snapshotId String?
+  snapshot   FlaggedHashSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([reason])
+  @@index([snapshotId])
+}
+
+// Versioned hash-list snapshots — one per ingestion. We never edit a snapshot
+// after it's built; instead an admin appends hashes during the staging phase,
+// then atomically activates it. The previously-active snapshot is deactivated
+// in the same transaction so there is exactly one active external snapshot
+// at any point. This is the rollback boundary: a corrupt ingestion is
+// abandoned by aborting (delete) before activate, or by activating an older
+// snapshot if the bad data made it live. Manual FlaggedHash entries are
+// orthogonal — they have null snapshotId and stay active independent of
+// which corpus is loaded.
+model FlaggedHashSnapshot {
+  id          String        @id @default(uuid())
+  // Monotonic version starting at 1. Used for ordering and human reference
+  // ("snapshot v17 from NCMEC, ingested 2026-04-30").
+  version     Int           @unique @default(autoincrement())
+  source      String // "ncmec" | "thorn" | "iwf" | "internal"
+  label       String? // human-readable, e.g. "NCMEC weekly 2026-04-26"
+  isActive    Boolean       @default(false)
+  hashCount   Int           @default(0)
+  createdById String? // admin id; null if ingested by automated job
+  createdAt   DateTime      @default(now())
+  activatedAt DateTime?
+  abortedAt   DateTime? // set if admin aborts staging without activating
+  notes       String?
+  hashes      FlaggedHash[]
+
+  @@index([isActive])
+  @@index([source, createdAt])
+}
+
+model GifFavorite {
+  id         String   @id @default(uuid())
+  userId     String
+  gifUrl     String
+  previewUrl String
+  title      String   @default("")
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gifUrl])
+  @@index([userId, createdAt])
+}
+
+model UserActivity {
+  id         String   @id @default(uuid())
+  userId     String   @unique // One active activity per user
+  type       String // "steam_game" | "detected_game" | "custom"
+  name       String // Game/activity name (e.g. "Counter-Strike 2")
+  details    String? // Additional details (e.g. "Competitive - Dust II")
+  state      String? // State string (e.g. "In Queue")
+  largeImage String? // URL for large activity image
+  smallImage String? // URL for small activity image
+  startedAt  DateTime @default(now())
+  platformId String? // Steam appId, etc.
+  platform   String? // "steam" | "electron" | "manual"
+  durationMs Int? // Track duration in milliseconds (Spotify, etc.)
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model UserSecondaryActivity {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  type       String // "steam_game" | "detected_game" | "custom" | "spotify"
+  name       String
+  details    String?
+  state      String?
+  largeImage String?
+  smallImage String?
+  startedAt  DateTime @default(now())
+  platformId String?
+  platform   String?
+  durationMs Int?
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ActivityHistory {
+  id         String    @id @default(uuid())
+  userId     String
+  type       String // "steam_game" | "detected_game" | "custom"
+  name       String
+  details    String?
+  largeImage String?
+  smallImage String?
+  platformId String?
+  platform   String? // "steam" | "electron" | "manual"
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+}
+
+model ServerEvent {
+  id                String          @id @default(uuid())
+  serverId          String
+  title             String
+  description       String?
+  startTime         DateTime
+  endTime           DateTime
+  allDay            Boolean         @default(false)
+  color             String          @default("#378ADD")
+  timezone          String          @default("UTC")
+  reminderChannelId String?
+  createdById       String?
+  recurrenceRule    String?         @default("NONE") // NONE | DAILY | WEEKLY | BIWEEKLY | MONTHLY | CUSTOM
+  recurrenceDays    Json? // For CUSTOM: array of day numbers [0..6] (Sun..Sat)
+  recurrenceEndDate DateTime? // When recurrence stops (null = indefinite)
+  voiceChannelId    String? // Voice channel linked to the event
+  reminderMentions  Json? // { everyone: boolean, here: boolean, roleIds: string[] }
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  server            Server          @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  // Event creator audit survives creator delete (SetNull) — createdById is
+  // already nullable. Event itself lives on the server and is managed via
+  // Server cascade.
+  createdBy         User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  reminders         EventReminder[]
+  rsvps             EventRsvp[]
+  invitees          EventInvitee[]
+
+  @@index([serverId])
+  @@index([serverId, startTime])
+  @@index([serverId, endTime])
+  @@index([createdById])
+}
+
+model EventInvitee {
+  id        String      @id @default(uuid())
+  eventId   String
+  scope     String // "EVERYONE" | "ROLE" | "USER"
+  targetId  String? // roleId for ROLE scope, userId for USER scope, null for EVERYONE
+  createdAt DateTime    @default(now())
+  event     ServerEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, scope, targetId])
+  @@index([eventId])
+  @@index([targetId])
+}
+
+model EventReminder {
+  id                     String      @id @default(uuid())
+  eventId                String
+  timing                 String
+  sent                   Boolean     @default(false)
+  sentAt                 DateTime?
+  lastFiredForOccurrence DateTime? // For recurring events: last occurrence this reminder fired for
+  event                  ServerEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, timing])
+  @@index([sent, eventId])
+}
+
+model EventRsvp {
+  id        String      @id @default(uuid())
+  eventId   String
+  userId    String
+  status    String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  event     ServerEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+model DmKeyBundle {
+  id                     String    @id @default(uuid())
+  userId                 String    @unique
+  publicKey              String // base64 X25519 public key
+  // Sibling Ed25519 public key used to sign pending deliveries + participate in
+  // safety-number verification. Nullable only for legacy rows; clients lazily
+  // generate + upload one on next unlock.
+  signingPublicKey       String?
+  encryptedBlob          String // AES-256-GCM ciphertext of {privateKey, privateSigningKey, archiveKey}
+  blobSalt               String // base64 Argon2id salt
+  blobVersion            Int       @default(1)
+  recoveryBlob           String // ciphertext under recovery key
+  recoveryNonce          String // nonce for recovery blob
+  recoveryMode           String?
+  recoveryPassphraseSalt String?
+  lastRecoveryReminder   DateTime?
+  passwordDerived        Boolean   @default(false)
+  serverEscrowBlob       String? // AES-256-GCM(HKDF(masterKey, userId), rawBlobContents)
+  // Server-side high-water mark for the move-to-Private archiveKey rotation. A
+  // history-archive POST whose keyVersion is below this floor is skipped, so a
+  // stale sibling tab cannot re-upload rows sealed under the old escrow-exposed
+  // archiveKey after the bulk DELETE bumps the floor.
+  minArchiveKeyVersion   Int       @default(1)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("SecureKeyBundle")
+}
+
+model Poll {
+  id            String       @id @default(uuid())
+  channelId     String?
+  dmChannelId   String?
+  serverId      String?
+  authorId      String
+  question      String
+  allowMultiple Boolean      @default(false)
+  anonymous     Boolean      @default(false)
+  duration      Int?
+  expiresAt     DateTime?
+  closedAt      DateTime?
+  createdAt     DateTime     @default(now())
+  editedAt      DateTime?
+  options       PollOption[]
+  votes         PollVote[]
+  // Polls die with their author (user-generated content).
+  author        User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([channelId])
+  @@index([dmChannelId])
+  @@index([serverId])
+  @@index([authorId])
+  @@index([expiresAt])
+}
+
+model PollOption {
+  id       String     @id @default(uuid())
+  pollId   String
+  text     String
+  emoji    String?
+  position Int        @default(0)
+  poll     Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes    PollVote[]
+
+  @@index([pollId])
+}
+
+model PollVote {
+  id        String     @id @default(uuid())
+  pollId    String
+  optionId  String
+  userId    String
+  createdAt DateTime   @default(now())
+  poll      Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  option    PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, optionId, userId])
+  @@index([pollId])
+  @@index([userId])
+  @@index([optionId])
+}
+
+model Thread {
+  id                  String          @id @default(uuid())
+  channelId           String
+  parentMessageId     String
+  serverId            String
+  name                String
+  authorId            String
+  archived            Boolean         @default(false)
+  archivedAt          DateTime?
+  autoArchive         Boolean         @default(true)
+  autoArchiveDuration Int             @default(1440)
+  lastActivityAt      DateTime        @default(now())
+  createdAt           DateTime        @default(now())
+  editedAt            DateTime?
+  channel             Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  server              Server          @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  // Threads die with their author (thread is user-started content).
+  // ThreadMessages cascade via their own FK to Thread.
+  author              User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  messages            ThreadMessage[]
+
+  @@index([channelId])
+  @@index([serverId])
+  @@index([parentMessageId])
+  @@index([archived])
+  @@index([lastActivityAt])
+  @@index([channelId, archived])
+}
+
+model ThreadMessage {
+  id                    String                  @id @default(uuid())
+  threadId              String
+  authorId              String
+  content               String
+  type                  String                  @default("message")
+  systemPayload         Json?
+  replyToMessageId      String?
+  replyToMessage        ThreadMessage?          @relation("ThreadMessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies               ThreadMessage[]         @relation("ThreadMessageReplies")
+  attachmentUrl         String?
+  attachmentName        String?
+  attachmentContentType String?
+  attachmentWidth       Int?
+  attachmentHeight      Int?
+  createdAt             DateTime                @default(now())
+  editedAt              DateTime?
+  thread                Thread                  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  // Thread messages die with their author.
+  author                User                    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions             ThreadMessageReaction[]
+
+  @@index([threadId])
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([threadId, createdAt])
+  @@index([threadId, id])
+  @@index([replyToMessageId])
+  @@index([attachmentUrl(ops: raw("text_pattern_ops"))])
+}
+
+model ThreadMessageReaction {
+  id        String        @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime      @default(now())
+  message   ThreadMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+}
+
+model StageSession {
+  id                    String    @id @default(uuid())
+  channelId             String
+  serverId              String
+  topic                 String?
+  maxSpeakers           Int       @default(10)
+  textChatEnabled       Boolean   @default(false)
+  allowEmojis           Boolean   @default(false)
+  allowStickers         Boolean   @default(false)
+  allowGifs             Boolean   @default(false)
+  invitedSpeakerUserIds String[]  @default([])
+  invitedRoleIds        String[]  @default([])
+  startedById           String
+  startedAt             DateTime  @default(now())
+  endedAt               DateTime?
+  channel               Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  server                Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([channelId])
+  @@index([serverId])
+  @@index([channelId, endedAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  serverId  String?
+  channelId String?
+  threadId  String?
+  type      String // 'mention' | 'everyone' | 'thread_reply' | 'thread_mention' | 'poll_ended' | 'stage_started' | 'calendar_soon' | 'calendar_live' | 'calendar_change'
+  title     String
+  body      String?
+  metadata  Json? // { messageId, pollId, eventId, stageSessionId, authorId, authorUsername, channelName }
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read, createdAt])
+  @@index([userId, serverId, read])
+  @@index([userId, createdAt])
+  @@index([serverId])
+}
+
+model ChannelReadState {
+  userId       String
+  channelId    String
+  lastReadAt   DateTime @default(now())
+  mentionCount Int      @default(0)
+
+  @@id([userId, channelId])
+  @@index([channelId])
+  @@index([userId])
+}
+
+model ThreadReadState {
+  userId       String
+  threadId     String
+  lastReadAt   DateTime @default(now())
+  mentionCount Int      @default(0)
+
+  @@id([userId, threadId])
+  @@index([threadId])
+  @@index([userId])
+}
+
+// Channel & Category Permission Overrides
+
+model ChannelPermissionOverride {
+  id          String   @id @default(uuid())
+  channelId   String
+  targetType  String // 'role' | 'member'
+  targetId    String // roleId or userId
+  permissions Json // Record<string, boolean | null> — null = inherit/neutral
+  createdAt   DateTime @default(now())
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, targetType, targetId])
+  @@index([channelId])
+}
+
+model CategoryPermissionOverride {
+  id          String          @id @default(uuid())
+  categoryId  String
+  targetType  String // 'role' | 'member'
+  targetId    String // roleId or userId
+  permissions Json // Record<string, boolean | null>
+  createdAt   DateTime        @default(now())
+  category    ChannelCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, targetType, targetId])
+  @@index([categoryId])
+}
+
+// Forum
+
+model ForumPost {
+  id             String         @id @default(uuid())
+  channelId      String
+  authorId       String
+  title          String
+  content        String
+  imageUrl       String?
+  pinned         Boolean        @default(false)
+  locked         Boolean        @default(false)
+  lastActivityAt DateTime       @default(now())
+  messageCount   Int            @default(0)
+  createdAt      DateTime       @default(now())
+  channel        Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  // Forum posts die with their author. Replies cascade via
+  // ForumMessage.forumPostId.
+  author         User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  tags           ForumPostTag[]
+  messages       ForumMessage[]
+
+  @@index([channelId])
+  @@index([channelId, lastActivityAt])
+  @@index([channelId, createdAt])
+  @@index([authorId])
+  @@index([imageUrl(ops: raw("text_pattern_ops"))])
+}
+
+model ForumMessage {
+  id                    String                 @id @default(uuid())
+  forumPostId           String
+  authorId              String
+  content               String
+  attachmentUrl         String?
+  attachmentName        String?
+  attachmentContentType String?
+  attachmentWidth       Int?
+  attachmentHeight      Int?
+  createdAt             DateTime               @default(now())
+  editedAt              DateTime?
+  forumPost             ForumPost              @relation(fields: [forumPostId], references: [id], onDelete: Cascade)
+  // Forum replies die with their author.
+  author                User                   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions             ForumMessageReaction[]
+
+  @@index([forumPostId])
+  @@index([forumPostId, createdAt])
+  @@index([authorId])
+  @@index([attachmentUrl(ops: raw("text_pattern_ops"))])
+}
+
+model ForumMessageReaction {
+  id        String       @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime     @default(now())
+  message   ForumMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+}
+
+model ForumTag {
+  id        String         @id @default(uuid())
+  channelId String
+  name      String
+  emoji     String?
+  color     String         @default("#6366f1")
+  position  Int            @default(0)
+  createdAt DateTime       @default(now())
+  channel   Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  posts     ForumPostTag[]
+
+  @@index([channelId])
+  @@index([channelId, position])
+}
+
+model ForumPostTag {
+  postId String
+  tagId  String
+  post   ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    ForumTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId])
+}
+
+model GameAccount {
+  id          String          @id @default(uuid())
+  userId      String
+  game        String // 'cs2' | 'dota2' | 'valorant' | 'lol' | 'tft' | 'fortnite' | 'apex' | 'marvel_rivals' | 'r6_siege'
+  provider    String // 'steam' | 'riot' | 'epic' | 'ea' | 'ubisoft' | 'marvel_rivals'
+  platformId  String // Steam ID, Riot PUUID, Epic Account ID, or username for non-OAuth providers
+  platform    String? // 'pc' | 'psn' | 'xbox' | null
+  displayName String? // Gamertag / display name
+  verified    Boolean         @default(false) // true = linked via OAuth, false = username entry
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  statsCache  GameStatsCache?
+
+  @@unique([userId, game]) // One account per game per user
+  @@index([userId])
+  @@index([provider])
+}
+
+model GameStatsCache {
+  id              String      @id @default(uuid())
+  gameAccountId   String      @unique
+  gameAccount     GameAccount @relation(fields: [gameAccountId], references: [id], onDelete: Cascade)
+  rank            Json? // { tier: string, division: string | null, rating: number | null, imageUrl: string | null }
+  stats           Json? // { kd: number, winRate: number, matches: number, ... } — shape varies per game
+  lastFetched     DateTime?
+  nextRefreshAt   DateTime?
+  fetchError      String? // Last error message if fetch failed
+  errorRetryCount Int         @default(0)
+  errorTransient  Boolean     @default(false) // True when last error is provider-side outage (5xx/429, DB unavailable, rate-limit) — triggers longer cooldown
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model ServerFolder {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String   @db.VarChar(32)
+  color     String?  @db.VarChar(7)
+  serverIds String[]
+  position  Int      @default(0)
+  muted     Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AnalyticsSnapshot {
+  id          String   @id @default(uuid())
+  timestamp   DateTime @default(now())
+  region      String // NA, EU, ASIA, SA, OCE, AF
+  onlineCount Int
+
+  @@index([timestamp])
+  @@index([region, timestamp])
+}
+
+model ProtocolDistributionSnapshot {
+  id              String   @id @default(uuid())
+  timestamp       DateTime @default(now())
+  buildDate       String? // ISO "YYYY-MM-DD" or null for pre-versioning clients
+  platform        String // "electron" | "web" | "unknown"
+  protocolVersion Int? // null when client didn't send the field
+  count           Int
+
+  @@index([timestamp])
+  @@index([buildDate])
+}
+
+// Per-user security event audit log. Records user-initiated
+// state changes that matter during account-compromise investigations
+// (password change, email change, MFA enroll/disable, passkey add/remove,
+// session revoke, logout-all, self-delete). Written fire-and-forget by
+// routes/services/securityEvents.ts emitUserSecurityEvent helper; exposed
+// read-only at GET /api/v1/me/security-events so the account owner can
+// review their own activity without waiting on admin support.
+//
+// eventType values are a closed set defined in services/securityEvents.ts
+// (UserSecurityEventType). metadata must never contain secrets —
+// passwords, tokens, MFA codes, recovery codes, or plaintext emails.
+// For email change: { newEmailHash: <hmac> }. For session revoke:
+// { sessionId }. For SSO login: { provider }.
+//
+// Cascade-deletes with the owning user (GDPR self-delete). Rely on
+// structured `logger.info` emission inside the helper for any tracing
+// that must outlive the user row; the table is for in-app account
+// review, not forensic retention.
+model UserSecurityEvent {
+  id            String   @id @default(uuid())
+  userId        String
+  eventType     String // password_changed | email_change_requested | email_change_confirmed | mfa_totp_enabled | mfa_totp_disabled | mfa_recovery_regen | passkey_added | passkey_removed | session_revoked | logout_all | self_delete_initiated | login_success | login_new_device
+  ipMasked      String?
+  userAgentHash String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// Per-server per-day insight rollups (public/community-servers).
+//
+// Computed by the BullMQ `serverStats` worker at 00:30 UTC for the previous
+// UTC day. One row per (serverId, date). Read by the owner-facing
+// `GET /api/v1/servers/:serverId/insights` endpoint.
+//
+// CRITICAL: aggregations cover Server / ServerMember / Channel / Message
+// only. DM / DMMessage are E2E encrypted and explicitly excluded — the
+// server only sees opaque ciphertext. See docs/howl-dm-encryption-spec.md.
+//
+// `voiceMinutes` is best-effort. Howl has `StageSession` (with `endedAt`)
+// but no per-user voice tracking. The worker aggregates stage-session
+// minutes for the date window; LiveKit-managed voice-channel sessions
+// aren't persisted to Postgres so they contribute 0 here.
+//
+// `leaves` is best-effort. ServerMember rows are deleted on leave/kick/ban
+// (no `leftAt` column). The worker leaves this at 0 for future expansion;
+// ban/kick can be inferred from AuditLog by a future migration if needed.
+model DailyServerStats {
+  id              String   @id @default(uuid())
+  serverId        String
+  date            DateTime @db.Date
+  members         Int      @default(0)
+  joins           Int      @default(0)
+  leaves          Int      @default(0)
+  messages        Int      @default(0)
+  voiceMinutes    Int      @default(0)
+  retainedAfter7d Int      @default(0)
+  computedAt      DateTime @default(now())
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, date])
+  @@index([serverId, date])
+}
+
+// Self Roles — picker channel + categories + entries + manual-approval queue.
+// One picker per server (v1) — enforced by `@unique` on serverId. Each picker
+// is a Channel of type='role_picker'. Cascade everywhere from the picker root
+// down. Roles are linked but not owned — cascading on role delete cleans up
+// just the entry, not the role itself.
+
+model RolePickerChannel {
+  id              String   @id @default(uuid())
+  channelId       String   @unique
+  // One picker per server. Schema-enforced. Backend channel-create rejects
+  // with 409 when this constraint would be violated; defense in depth.
+  serverId        String   @unique
+  heroTitle       String?  @db.VarChar(80)
+  heroDescription String?  @db.VarChar(280)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  channel    Channel              @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  server     Server               @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  categories RolePickerCategory[]
+}
+
+model RolePickerCategory {
+  id        String   @id @default(uuid())
+  pickerId  String
+  name      String   @db.VarChar(40)
+  position  Int
+  pickMode  String   @default("multi") // 'single' | 'multi'
+  required  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  picker  RolePickerChannel @relation(fields: [pickerId], references: [id], onDelete: Cascade)
+  entries RolePickerEntry[]
+
+  @@unique([pickerId, position])
+  @@index([pickerId])
+}
+
+model RolePickerEntry {
+  id           String   @id @default(uuid())
+  categoryId   String
+  roleId       String
+  position     Int
+  emoji        String?  @db.VarChar(8)
+  /// Custom icon for the role tile. Pro-tier feature — set via the upload
+  /// flow on the admin picker UI. When non-null this takes precedence over
+  /// `emoji` at render time. URL must point at our own upload host (R2/CDN);
+  /// the route layer rejects external URLs and non-Pro accounts.
+  iconUrl      String?  @db.VarChar(2048)
+  description  String?  @db.VarChar(200)
+  /// JSON blob — see ConditionRequirements in conditionEvaluator.ts.
+  /// Schema-flexible so new condition types can be added without migration.
+  requirements Json?
+  createdAt    DateTime @default(now())
+
+  category RolePickerCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  role     ServerRole         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  requests RoleClaimRequest[]
+
+  @@unique([categoryId, roleId])
+  @@index([categoryId])
+  @@index([roleId])
+}
+
+model RoleClaimRequest {
+  id               String    @id @default(uuid())
+  serverId         String
+  userId           String
+  pickerEntryId    String
+  // Cached for queue display even if the entry is later removed.
+  roleId           String
+  status           String    @default("pending") // 'pending' | 'approved' | 'rejected' | 'withdrawn'
+  applicantMessage String?   @db.VarChar(500)
+  decidedById      String?
+  decisionNote     String?   @db.VarChar(500)
+  createdAt        DateTime  @default(now())
+  decidedAt        DateTime?
+
+  server    Server          @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user      User            @relation("RoleClaimRequestApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  decidedBy User?           @relation("RoleClaimRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  entry     RolePickerEntry @relation(fields: [pickerEntryId], references: [id], onDelete: Cascade)
+  // Partial unique (status='pending') is added in raw SQL in the migration —
+  // Prisma can't express it as @@unique here.
+
+  @@index([serverId, status, createdAt])
+  @@index([userId])
+}
+
+model MlsGroup {
+  id             String   @id @default(uuid())
+  dmChannelId    String
+  tier           String   @default("saved") // 'saved' | 'otr'
+  cipherSuite    Int      @default(83) // keep in sync with MLS_CIPHERSUITE_ID (src/mls/ciphersuite.ts)
+  currentEpoch   BigInt   @default(0) // the CAS target
+  groupInfo      Bytes? // latest published GroupInfo (public, incl. public ratchet tree); set inside the CAS UPDATE
+  groupInfoEpoch BigInt?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  dmChannel      DMChannel   @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+  commits        MlsCommit[]
+
+  @@unique([dmChannelId, tier]) // one group per (channel, tier); create-once guard
+}
+
+model MlsCommit {
+  id             String   @id @default(uuid())
+  groupId        String
+  epoch          BigInt // the CONSUMED base epoch N (this commit advanced N -> N+1)
+  commitData     Bytes // accepted MLSMessage (public handshake), relayed verbatim
+  idempotencyKey String // client nonce or hash of the serialized message
+  senderLeaf     String? // sender leaf ref/index, for authz/audit
+  createdAt      DateTime @default(now())
+  group          MlsGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, epoch]) // durable double-accept backstop
+  @@unique([groupId, idempotencyKey]) // resubmission idempotency
+}
+
+model MlsKeyPackage {
+  id            String    @id @default(uuid())
+  userId        String
+  deviceId      String
+  keyPackageRef String    @unique // makeKeyPackageRef hash (base64); consume dedupe key
+  keyPackage    Bytes // public KeyPackage (no private material)
+  isLastResort  Boolean   @default(false)
+  notAfter      DateTime // real lifetime; DS prunes/refuses expired
+  consumedAt    DateTime? // tombstone (null = available)
+  createdAt     DateTime  @default(now())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, deviceId, consumedAt])
+  @@index([notAfter])
+}
+
+model MlsWelcome {
+  id          String   @id @default(uuid())
+  recipientId String
+  groupId     String
+  epoch       BigInt
+  welcomeData Bytes // MLS Welcome (sealed to joiner init key), opaque to server
+  createdAt   DateTime @default(now())
+  recipient   User     @relation("MlsWelcomeRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@unique([recipientId, groupId, epoch]) // single-use per (group, joiner, epoch)
+  @@index([recipientId])
+}
+
+// One predecessor-signed AIK rotation hop oldAik -> newAik at a 1-based per-user seq.
+// The server stores these OPAQUELY and does zero crypto: the signature is verified only
+// client-side, rooted at the verifier's own pinned AIK (see services/mls/aikRotation).
+// The three @@unique constraints are HONEST-SERVER defense-in-depth (the client enforces
+// linearity); `context` is display-only — the verifier uses a compiled-in label.
+model AikRotation {
+  id        String   @id @default(uuid())
+  userId    String
+  seq       Int
+  oldAik    String // base64 Ed25519 public key (predecessor)
+  newAik    String // base64 Ed25519 public key (successor)
+  signature String // base64 Ed25519 detached signature over the link message, under oldAik
+  context   String // "howl:mls:aik-rotation:v1" — DISPLAY ONLY
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, seq]) // no duplicate sequence numbers
+  @@unique([userId, oldAik]) // single out-degree per key (no fork)
+  @@unique([userId, newAik]) // single in-degree per key (no merge)
+  @@index([userId])
+}
+
+// The current signed head per user: the anti-rollback freshness anchor at the chain tip.
+model AikHead {
+  userId    String   @id
+  seq       Int
+  aik       String // base64 Ed25519 public key (current head == chain tip's newAik)
+  signature String // base64 Ed25519 detached signature over the head message, under aik
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DmHistoryArchive {
+  id           String   @id @default(uuid())
+  userId       String
+  dmChannelId  String
+  envelopeHash String // hex SHA-256 of the source envelope; dedup key (<=128)
+  ciphertext   String // base64(iv || AES-256-GCM(archiveKey, plaintext, AAD)); opaque to server
+  keyVersion   Int      @default(1) // which archiveKey generation sealed this row
+  messageId    String // DMMessage id; delete-for-everyone + GDPR targeting
+  msgCreatedAt DateTime // client archive time; oldest-first restore + latest-per-channel preview
+  createdAt    DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dmChannel DMChannel @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dmChannelId, envelopeHash]) // idempotent upsert; multi-device convergence
+  @@index([userId, dmChannelId, msgCreatedAt]) // previews + paginated full restore
+  @@index([userId, dmChannelId, messageId]) // delete-for-everyone
+  @@index([userId]) // bulk delete (move-to-Private, GDPR, reset)
+  @@index([userId, msgCreatedAt, id]) // global per-user oldest-first eviction scan
+}
+
+// Write-once record that a messageId was deleted-for-everyone.
+// Per-user (the archive itself is per-user); the DELETE handler writes it in the
+// same tx as the row deletion, and POST filters tombstoned items so a deleted
+// message can never be re-uploaded (re-POST resurrection race) or restored.
+model DmHistoryArchiveTombstone {
+  id          String   @id @default(uuid())
+  userId      String
+  dmChannelId String
+  messageId   String
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dmChannel DMChannel @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dmChannelId, messageId]) // write-once (ON CONFLICT DO NOTHING)
+  @@index([userId, dmChannelId])
+}

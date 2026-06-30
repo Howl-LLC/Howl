@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+npx eslint components/ contexts/ hooks/ services/ shared/ utils/ __tests__/ App.tsx config.ts index.tsx types.ts src/ --max-warnings 0 && cd backend && npx eslint src/ --max-warnings 0 && npx tsc --noEmit

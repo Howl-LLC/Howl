@@ -1,0 +1,121 @@
+<!--
+  Howl for Stream Deck — verification + install page.
+  Deployed at app.howlpro.com/streamdeck.
+  Purpose: (1) canonical anchor for users verifying the official plugin ID,
+  (2) single install entry point (Elgato Marketplace). No direct download
+  channel — Marketplace-only distribution per Discord/Spotify/etc. norm.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Howl for Stream Deck</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #111827;
+      color: #e5e7eb;
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .card {
+      max-width: 520px;
+      width: 100%;
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 40px 32px;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #f9fafb;
+      margin-bottom: 8px;
+    }
+
+    .lede {
+      color: #9ca3af;
+      font-size: 0.95rem;
+      margin-bottom: 32px;
+    }
+
+    .plugin-id {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 14px 20px;
+      margin-bottom: 12px;
+      font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+      color: #60a5fa;
+      font-weight: 600;
+      font-size: 1.05rem;
+      word-break: break-all;
+    }
+
+    .plugin-id-note {
+      color: #9ca3af;
+      font-size: 0.9rem;
+      margin-bottom: 32px;
+    }
+
+    .install-btn {
+      display: inline-block;
+      padding: 14px 28px;
+      border-radius: 8px;
+      background: #374151;
+      color: #9ca3af;
+      font-weight: 600;
+      font-size: 0.95rem;
+      border: 1px solid #4b5563;
+      cursor: not-allowed;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-top: 24px;
+      color: #60a5fa;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .back-link:hover { text-decoration: underline; }
+
+    @media (max-width: 480px) {
+      .card { padding: 28px 20px; }
+      h1 { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Howl for Stream Deck</h1>
+    <p class="lede">
+      The official Howl plugin for Elgato Stream Deck. Pair with the Howl desktop app
+      to control voice, calls, reactions, and more from your Stream Deck keys.
+    </p>
+
+    <div class="plugin-id" aria-label="Official plugin identifier">com.howlpro.streamdeck</div>
+    <p class="plugin-id-note">
+      If your pairing prompt shows any other Plugin ID, click <strong>Deny</strong>.
+    </p>
+
+    <span class="install-btn" aria-disabled="true">
+      Get from Elgato Marketplace &middot; Coming soon
+    </span>
+
+    <div>
+      <a href="https://app.howlpro.com" class="back-link">&larr; Back to Howl</a>
+    </div>
+  </main>
+</body>
+</html>

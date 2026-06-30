@@ -136,6 +136,8 @@ export default defineConfig(({ mode }) => {
           workbox: {
             importScripts: ['sw-push.js'],
             globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
+            // Don't precache marketing imagery; it's served responsively and lazily.
+            globIgnores: ['landing/**'],
             runtimeCaching: [
               {
                 // Only cache non-encrypted uploads (images/avatars/etc).

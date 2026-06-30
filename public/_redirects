@@ -15,6 +15,10 @@
 # refresh reloads the current HTML referencing the correct hashes).
 /assets/*         /assets/:splat     404
 
+# Missing landing images 404 instead of falling through to the SPA catch-all
+# (which returns index.html and makes the <img> silently fail). Mirrors /assets/*.
+/landing/*        /landing/:splat        404
+
 # Stream Deck landing page — serve /streamdeck from public/streamdeck/index.html
 # rather than falling through to the SPA catch-all.
 /streamdeck       /streamdeck/index.html    200

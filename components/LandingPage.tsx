@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Link } from 'react-router-dom';
 import { assetPath } from '../utils/assetPath';
 import { HowlBrand } from './brand/HowlBrand';
+import { LANDING_SHOTS } from './landingImageManifest';
 
 /* ════════════════════════════════════════════════════════════════════════
    Howl Landing Page
@@ -33,6 +34,48 @@ import { HowlBrand } from './brand/HowlBrand';
 /* ─── Asset roots (served from /public/landing) ─── */
 const asset = (p: string) => assetPath(`/landing/assets/${p}`);
 const shot = (p: string) => assetPath(`/landing/screenshots/${p}`);
+
+/* Responsive screenshot: <picture> with AVIF/WebP variants over a PNG fallback.
+   Widths come from the generated manifest; picture{display:contents} preserves
+   the inner <img>'s layout. */
+const SHOT_SIZES = '(max-width: 900px) 92vw, 600px';
+
+function shotSrcSet(name: string, ext: 'avif' | 'webp'): string {
+  return (LANDING_SHOTS[name]?.widths ?? [])
+    .map((w) => `${shot(`${name}-${w}.${ext}`)} ${w}w`)
+    .join(', ');
+}
+
+type ShotProps = {
+  name: string;
+  alt: string;
+  style?: React.CSSProperties;
+  sizes?: string;
+  draggable?: boolean;
+  loading?: 'lazy' | 'eager';
+  fetchPriority?: 'high' | 'low' | 'auto';
+};
+
+function Shot({ name, alt, style, sizes = SHOT_SIZES, draggable, loading = 'lazy', fetchPriority }: ShotProps) {
+  const meta = LANDING_SHOTS[name];
+  return (
+    <picture>
+      <source type="image/avif" srcSet={shotSrcSet(name, 'avif')} sizes={sizes} />
+      <source type="image/webp" srcSet={shotSrcSet(name, 'webp')} sizes={sizes} />
+      <img
+        src={shot(`${name}.png`)}
+        alt={alt}
+        width={meta?.w}
+        height={meta?.h}
+        loading={loading}
+        decoding="async"
+        fetchPriority={fetchPriority}
+        draggable={draggable}
+        style={style}
+      />
+    </picture>
+  );
+}
 
 /* ─── Download wiring (mirrors the prior LandingPage so file URLs match
    what `npm run dist` actually publishes to `releases.howlpro.com`). ─── */
@@ -216,7 +259,7 @@ function LockedSticker({
       }}
     >
       <img
-        src={src} alt={alt} draggable={false}
+        src={src} alt={alt} draggable={false} loading="lazy" decoding="async"
         style={{
           width: '100%', height: '100%', display: 'block', pointerEvents: 'none',
           filter: 'drop-shadow(0 10px 28px rgba(0,0,0,0.35)) drop-shadow(0 0 0.5px rgba(255,255,255,0.4))',
@@ -271,7 +314,7 @@ function Nav({ scrolled }: { scrolled: boolean }) {
             onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.color = 'var(--text)'; }}
             onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
           >About</Link>
-          <img src={asset('howl-mascot-hero.png')} alt="" aria-hidden="true"
+          <img src={asset('howl-mascot-hero.png')} alt="" aria-hidden="true" decoding="async"
             style={{ width: 40, height: 40, objectFit: 'contain', marginLeft: 6, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.25))', pointerEvents: 'none' }} />
           {/* Get Howl scrolls to whichever download CTA (#hero-download or
              #download) is closer to the user's current scroll position — see
@@ -287,7 +330,7 @@ function Nav({ scrolled }: { scrolled: boolean }) {
         </div>
 
         {/* Mobile mascot — left of the hamburger */}
-        <img src={asset('howl-mascot-hero.png')} alt="" aria-hidden="true" className="nav-mascot-mobile"
+        <img src={asset('howl-mascot-hero.png')} alt="" aria-hidden="true" className="nav-mascot-mobile" decoding="async"
           style={{ display: 'none', width: 40, height: 40, objectFit: 'contain', marginLeft: 'auto', marginRight: 6, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.25))', pointerEvents: 'none' }} />
 
         <button className="nav-hamburger" onClick={() => setMenuOpen(o => !o)} aria-label="Menu"
@@ -398,7 +441,7 @@ function HeroSection({ userOS }: { userOS: UserOS }) {
               transform: `translate(${heroWave.x}px, ${heroWave.y}px) rotate(${heroWave.rot}deg)`,
               transformOrigin: 'center center', pointerEvents: 'none', userSelect: 'none', zIndex: 5,
             }}>
-              <img src={asset('roo-waving.webp')} alt="" draggable={false}
+              <img src={asset('roo-waving.webp')} alt="" draggable={false} decoding="async"
                 style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
             </div>
           </div>
@@ -467,7 +510,7 @@ function HeroSection({ userOS }: { userOS: UserOS }) {
             position: 'absolute', left: heroPuppy.x, top: heroPuppy.y, zIndex: 10,
             width: 140, height: 140, pointerEvents: 'none', userSelect: 'none',
           }}>
-            <img src={asset('roo-puppy.webp')} alt="Roo" draggable={false}
+            <img src={asset('roo-puppy.webp')} alt="Roo" draggable={false} decoding="async"
               style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.3))' }} />
           </div>
         </div>
@@ -482,7 +525,7 @@ function HeroSection({ userOS }: { userOS: UserOS }) {
               background: BEZEL_FILL, boxShadow: BEZEL_SHADOW, zIndex: 2, transformOrigin: '30% 50%', overflow: 'hidden',
             }}>
               <div style={sheen} /><div style={topEdge} />
-              <img src={shot('chat-final.png')} alt="Howl Chat" style={{ position: 'relative', zIndex: 2, width: '100%', display: 'block', borderRadius: 12 }} />
+              <Shot name="chat-final" alt="Howl Chat" loading="eager" fetchPriority="high" style={{ position: 'relative', zIndex: 2, width: '100%', display: 'block', borderRadius: 12 }} />
             </div>
 
             {/* Showcase */}
@@ -492,7 +535,7 @@ function HeroSection({ userOS }: { userOS: UserOS }) {
               background: BEZEL_FILL, boxShadow: BEZEL_SHADOW, zIndex: 3, transformOrigin: '70% 50%', overflow: 'hidden',
             }}>
               <div style={sheen} /><div style={topEdge} />
-              <img src={shot('showcase-real.png')} alt="Howl Showcase" style={{ position: 'relative', zIndex: 2, width: '100%', display: 'block', borderRadius: 12 }} />
+              <Shot name="showcase-real" alt="Howl Showcase" loading="eager" fetchPriority="low" style={{ position: 'relative', zIndex: 2, width: '100%', display: 'block', borderRadius: 12 }} />
             </div>
 
             {/* Calendar */}
@@ -504,7 +547,7 @@ function HeroSection({ userOS }: { userOS: UserOS }) {
               zIndex: 1, transformOrigin: '50% 100%', overflow: 'hidden',
             }}>
               <div style={sheen} /><div style={topEdge} />
-              <img src={shot('calendar.png')} alt="Howl Calendar" style={{ position: 'relative', zIndex: 2, width: '100%', display: 'block', borderRadius: 12 }} />
+              <Shot name="calendar" alt="Howl Calendar" loading="eager" fetchPriority="low" style={{ position: 'relative', zIndex: 2, width: '100%', display: 'block', borderRadius: 12 }} />
             </div>
 
             {/* Ground shadow */}
@@ -543,13 +586,13 @@ function EncryptionStackVisual() {
         onClick={() => openLightbox(shot('privacy-encryption.png'), 'Howl Encryption Settings')}
         style={{ ...bezel, ...tl.style, top: '0%', left: '-2%', width: '64%', zIndex: 3, transformOrigin: '85% 60%' }}>
         <div style={sheen} /><div style={topEdge} />
-        <img src={shot('privacy-encryption.png')} alt="Howl Encryption Settings" style={img} />
+        <Shot name="privacy-encryption" alt="Howl Encryption Settings" style={img} />
       </div>
       <div ref={bl.ref} onMouseMove={bl.onMouseMove} onMouseLeave={bl.onMouseLeave}
         onClick={() => openLightbox(shot('privacy-social.png'), 'Howl Social & Privacy')}
         style={{ ...bezel, ...bl.style, bottom: '0%', right: '-3%', width: '58%', zIndex: 4, transformOrigin: '15% 40%' }}>
         <div style={sheen} /><div style={topEdge} />
-        <img src={shot('privacy-social.png')} alt="Howl Social & Privacy" style={img} />
+        <Shot name="privacy-social" alt="Howl Social & Privacy" style={img} />
       </div>
     </div>
   );
@@ -569,7 +612,7 @@ function DraggableRooVisual() {
           transform: `rotateY(${12 + t.y}deg) rotateX(${2 + t.x}deg)`, transformOrigin: 'right center', transition: cardTransition, zIndex: 1,
         }}>
         <div style={{ position: 'absolute', inset: 0, borderRadius: 12, background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, transparent 35%)', pointerEvents: 'none' }} />
-        <img src={shot('entry-rules.png')} alt="Howl Entry Rules" style={{ width: '100%', display: 'block', borderRadius: 12 }} />
+        <Shot name="entry-rules" alt="Howl Entry Rules" style={{ width: '100%', display: 'block', borderRadius: 12 }} />
       </div>
       <div className="feature-stack-front" onClick={() => openLightbox(shot('applications.png'), 'Howl Applications')}
         style={{
@@ -579,13 +622,13 @@ function DraggableRooVisual() {
           transform: `rotateY(${-8 + t.y}deg) rotateX(${2 + t.x}deg)`, transformOrigin: 'left center', transition: cardTransition, zIndex: 2,
         }}>
         <div style={{ position: 'absolute', inset: 0, borderRadius: 12, background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, transparent 35%)', pointerEvents: 'none' }} />
-        <img src={shot('applications.png')} alt="Howl Applications" style={{ width: '100%', display: 'block', borderRadius: 12 }} />
+        <Shot name="applications" alt="Howl Applications" style={{ width: '100%', display: 'block', borderRadius: 12 }} />
       </div>
     </div>
   );
 }
 
-function SingleScreenshot({ src, alt, tilt = 'rotateY(0deg)', origin = 'center' }: { src: string; alt: string; tilt?: string; origin?: string }) {
+function SingleScreenshot({ name, alt, tilt = 'rotateY(0deg)', origin = 'center' }: { name: string; alt: string; tilt?: string; origin?: string }) {
   const openLightbox = useLightbox();
   const ref = useRef<HTMLDivElement>(null);
   const [t, setT] = useState({ x: 0, y: 0 });
@@ -597,7 +640,7 @@ function SingleScreenshot({ src, alt, tilt = 'rotateY(0deg)', origin = 'center' 
   return (
     <div style={{ position: 'relative', width: '100%', minHeight: 380, perspective: 1400 }}>
       <div ref={ref} onMouseMove={onMove} onMouseLeave={() => setT({ x: 0, y: 0 })}
-        onClick={() => openLightbox(src, alt)}
+        onClick={() => openLightbox(shot(`${name}.png`), alt)}
         style={{
           position: 'relative', width: '100%', borderRadius: 12, overflow: 'hidden', padding: 6, cursor: 'zoom-in',
           border: '1px solid rgba(255, 255, 255, 0.18)', background: BEZEL_FILL,
@@ -606,13 +649,13 @@ function SingleScreenshot({ src, alt, tilt = 'rotateY(0deg)', origin = 'center' 
         }}>
         <div style={{ position: 'absolute', inset: 0, borderRadius: 12, background: 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 35%)', pointerEvents: 'none', zIndex: 0 }} />
         <div style={{ position: 'absolute', top: 0, left: '8%', right: '8%', height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)', pointerEvents: 'none', zIndex: 1 }} />
-        <img src={src} alt={alt} style={{ position: 'relative', zIndex: 2, width: '100%', display: 'block', borderRadius: 12 }} />
+        <Shot name={name} alt={alt} style={{ position: 'relative', zIndex: 2, width: '100%', display: 'block', borderRadius: 12 }} />
       </div>
     </div>
   );
 }
 
-type CarouselImg = { src: string; alt: string; objectPosition?: string };
+type CarouselImg = { name: string; alt: string; objectPosition?: string };
 
 function ScreenshotCarousel({ images, tilt = 'rotateY(0deg)' }: { images: CarouselImg[]; tilt?: string }) {
   const openLightbox = useLightbox();
@@ -643,7 +686,7 @@ function ScreenshotCarousel({ images, tilt = 'rotateY(0deg)' }: { images: Carous
             }}>
               <div style={{ position: 'absolute', inset: 0, borderRadius: 12, background: 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 35%)', pointerEvents: 'none', zIndex: 0 }} />
               <div style={{ position: 'absolute', top: 0, left: '8%', right: '8%', height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)', pointerEvents: 'none', zIndex: 1 }} />
-              <img src={im.src} alt={im.alt} draggable={false}
+              <Shot name={im.name} alt={im.alt} draggable={false}
                 style={{ position: 'absolute', inset: 6, zIndex: 2, width: 'calc(100% - 12px)', height: 'calc(100% - 12px)', objectFit: 'cover', objectPosition: im.objectPosition || 'center top', display: 'block', borderRadius: 12 }} />
             </div>
           </div>
@@ -662,7 +705,7 @@ function ScreenshotCarousel({ images, tilt = 'rotateY(0deg)' }: { images: Carous
         ))}
       </div>
 
-      <button onClick={(e) => { e.stopPropagation(); const im = images[idx]; openLightbox(im.src, im.alt); }} aria-label="Zoom screenshot"
+      <button onClick={(e) => { e.stopPropagation(); const im = images[idx]; openLightbox(shot(`${im.name}.png`), im.alt); }} aria-label="Zoom screenshot"
         style={{
           position: 'absolute', top: 10, right: 10, width: 34, height: 34, borderRadius: '50%',
           background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.18)', color: '#fff', cursor: 'zoom-in',
@@ -746,7 +789,7 @@ function FeaturesSection() {
       visual: (
         <div style={{ position: 'relative' }}>
           <EncryptionStackVisual />
-          <LockedSticker src={asset('roo-lock-key.gif')} alt="Lock & Key Roo" desktop={{ x: 315, y: 89, w: 432, rot: -4 }} mobile={{ x: 18, y: 376, w: 396, rot: -4 }} aspect={2048 / 2732} />
+          <LockedSticker src={asset('roo-lock-key.webp')} alt="Lock & Key Roo" desktop={{ x: 315, y: 89, w: 432, rot: -4 }} mobile={{ x: 18, y: 376, w: 396, rot: -4 }} aspect={2048 / 2732} />
         </div>
       ),
     },
@@ -767,8 +810,8 @@ function FeaturesSection() {
       bullets: ['Schedule role-based events', 'Coordinate sessions', 'Plan for game drops or anything else'],
       visual: (
         <div style={{ position: 'relative' }}>
-          <SingleScreenshot src={shot('server-calendar.png')} alt="Howl Server Calendar" tilt="rotateY(-10deg) rotateX(2deg)" origin="left center" />
-          <LockedSticker src={asset('roo-megaphone.gif')} alt="Megaphone Roo" desktop={{ x: -493, y: 149, w: 343, rot: -6 }} mobile={{ x: 90, y: -260, w: 371, rot: -6 }} aspect={2048 / 2732} />
+          <SingleScreenshot name="server-calendar" alt="Howl Server Calendar" tilt="rotateY(-10deg) rotateX(2deg)" origin="left center" />
+          <LockedSticker src={asset('roo-megaphone.webp')} alt="Megaphone Roo" desktop={{ x: -493, y: 149, w: 343, rot: -6 }} mobile={{ x: 90, y: -260, w: 371, rot: -6 }} aspect={2048 / 2732} />
         </div>
       ),
     },
@@ -779,9 +822,9 @@ function FeaturesSection() {
       visual: (
         <div style={{ position: 'relative' }}>
           <ScreenshotCarousel images={[
-            { src: shot('appearance-1.png'), alt: 'Howl Appearance — Preview & Theme' },
-            { src: shot('appearance-2.png'), alt: 'Howl Appearance — Layout & Colors' },
-            { src: shot('appearance-3.png'), alt: 'Howl Appearance — Density & Scaling' },
+            { name: 'appearance-1', alt: 'Howl Appearance — Preview & Theme' },
+            { name: 'appearance-2', alt: 'Howl Appearance — Layout & Colors' },
+            { name: 'appearance-3', alt: 'Howl Appearance — Density & Scaling' },
           ]} tilt="rotateY(8deg) rotateX(3deg)" />
           <LockedSticker src={asset('painter-roo.webp')} alt="Painter Roo" desktop={{ x: 966, y: -104, w: 376, rot: 0 }} mobile={{ x: 97, y: -542, w: 388, rot: 0 }} aspect={2048 / 2732} />
         </div>
@@ -794,12 +837,12 @@ function FeaturesSection() {
       visual: (
         <div style={{ position: 'relative' }}>
           <ScreenshotCarousel images={[
-            { src: shot('roles.png'), alt: 'Howl Roles' },
-            { src: shot('self-roles.png'), alt: 'Howl Self Roles' },
-            { src: shot('safety.png'), alt: 'Howl Safety' },
-            { src: shot('auto-filter.png'), alt: 'Howl Auto Filter' },
+            { name: 'roles', alt: 'Howl Roles' },
+            { name: 'self-roles', alt: 'Howl Self Roles' },
+            { name: 'safety', alt: 'Howl Safety' },
+            { name: 'auto-filter', alt: 'Howl Auto Filter' },
           ]} tilt="rotateY(-8deg) rotateX(3deg)" />
-          <LockedSticker src={asset('roo-reading-transparent.gif')} alt="Reading Roo" desktop={{ x: -242, y: 40, w: 89, rot: 0 }} mobile={{ x: 79, y: -82, w: 80, rot: 0 }} aspect={634 / 551} />
+          <LockedSticker src={asset('roo-reading-transparent.webp')} alt="Reading Roo" desktop={{ x: -242, y: 40, w: 89, rot: 0 }} mobile={{ x: 79, y: -82, w: 80, rot: 0 }} aspect={634 / 551} />
         </div>
       ),
     },
@@ -841,7 +884,7 @@ function _ShowcaseSection() {
           boxShadow: '0 60px 140px -30px rgba(0,0,0,0.7), 0 24px 60px -16px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)',
         }}>
           <div style={{ position: 'absolute', inset: 0, borderRadius: 12, background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 35%)', pointerEvents: 'none', zIndex: 0 }} />
-          <img src={shot('showcase-real.png')} alt="Howl Showcase Cards" style={{ position: 'relative', zIndex: 1, width: '100%', display: 'block', borderRadius: 12 }} />
+          <Shot name="showcase-real" alt="Howl Showcase Cards" style={{ position: 'relative', zIndex: 1, width: '100%', display: 'block', borderRadius: 12 }} />
         </div>
       </RevealDiv>
     </section>
@@ -1071,6 +1114,7 @@ const LANDING_CSS = `
   -webkit-font-smoothing: antialiased;
 }
 .howl-landing *, .howl-landing *::before, .howl-landing *::after { box-sizing: border-box; }
+.howl-landing picture { display: contents; }
 .howl-landing ::-webkit-scrollbar { width: 6px; }
 .howl-landing ::-webkit-scrollbar-track { background: transparent; }
 .howl-landing ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }

@@ -26,8 +26,7 @@ deploy/selfhost/.env
 release/
 howl-backend.zip
 
-# Native addon build artifacts (NVIDIA Broadcast Phase 1+). Built locally
-# on Windows + RTX machines; never committed.
+# Native addon build artifacts. Built locally; never committed.
 native/**/build/
 native/**/*.node
 
@@ -85,10 +84,4 @@ coverage/
 /.playwright-mcp/
 .superpowers/
 
-# Internal audit & release-prep artifacts — local only, never publish
-/CRYPTO_AUDIT.md
-/security_recon_report.md
-/sync-vault.ps1
-/docs/audits/
-/docs/dev-notes/
 /mockups/

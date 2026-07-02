@@ -61,6 +61,11 @@ export interface MlsNetwork {
   getDMs(): Promise<MlsDmSummary[]>;
   // A peer's AIK rotation-attestation chain (public AIKs + detached sigs, ascending by seq).
   getAikChain(userId: string): Promise<AikChainResult>;
+  // A peer's CURRENT account AIK (DmKeyBundle.signingPublicKey) — the cheap pre-consume
+  // read the rejected-key negative cache checks before burning a KeyPackage.
+  getPeerAik(userId: string): Promise<{ signingPublicKey: string | null }>;
+  // Manual teardown of a stranded 1:1 group (POST /mls/groups/:id/reset, expectedEpoch-bound).
+  resetGroup(groupId: string, expectedEpoch: string): Promise<{ success: boolean }>;
   idempotencyKeyFor(groupId: string, baseEpoch: string, kind: string, recipientId?: string): Promise<string>;
 }
 
@@ -76,6 +81,9 @@ export interface AikChainResult { chain: AikChainLink[]; head: AikChainHead | nu
 export interface CommitWelcomeSource {
   onCommit(cb: (e: { groupId: string; epoch: string; commit: string }) => void | Promise<void>): () => void;
   onWelcome(cb: (e: { groupId: string; epoch: string }) => void | Promise<void>): () => void;
+  // Server-side 1:1 group reset push (mls-group-reset). Optional so existing test
+  // doubles of this seam stay valid; the core guards the subscription.
+  onGroupReset?(cb: (e: { dmChannelId: string; mlsGroupId: string }) => void | Promise<void>): () => void;
 }
 
 // Seam 3: ClassificationSink (the localStorage-write setChannelProtocol)
@@ -105,18 +113,25 @@ export type MainToWorker =
   | { kind: 'rpc'; correlationId: string; method: ProxiedMethod; args: unknown[] }
   | { kind: 'socket-event'; event: 'commit'; payload: { groupId: string; epoch: string; commit: string } }
   | { kind: 'socket-event'; event: 'welcome'; payload: { groupId: string; epoch: string } }
+  | { kind: 'socket-event'; event: 'group-reset'; payload: { dmChannelId: string; mlsGroupId: string } }
   | { kind: 'net-result'; correlationId: string; ok: true; value: unknown }
-  | { kind: 'net-result'; correlationId: string; ok: false; error: { name: string; message: string; status?: number } };
+  | { kind: 'net-result'; correlationId: string; ok: false; error: { name: string; message: string; status?: number; nonApiResponse?: boolean } };
 
 // Messages: worker -> main (dispatcher)
 export type WorkerToMain =
   | { kind: 'rpc-result'; correlationId: string; ok: true; value: unknown }
-  | { kind: 'rpc-result'; correlationId: string; ok: false; error: { name: string; message: string; status?: number; reason?: 'peer-unprovisioned'; unprovisionedUserId?: string } }
+  // `reason` is typed as the open string union it really is at runtime: the host
+  // marshals whatever typed reason the core stamped ('peer-unprovisioned',
+  // 'key-change-blocked', ...). `blockedUserId` names the peer for the
+  // key-change-blocked case (mirrors unprovisionedUserId).
+  | { kind: 'rpc-result'; correlationId: string; ok: false; error: { name: string; message: string; status?: number; reason?: string; unprovisionedUserId?: string; blockedUserId?: string } }
   | { kind: 'net-request'; correlationId: string; method: keyof MlsNetwork; args: unknown[] }
   | { kind: 'set-classification'; channelId: string }
   | { kind: 'event'; event: 'mls-ready' | 'mls-locked' }
   | { kind: 'event-epoch'; payload: { dmChannelId: string; groupId: string; epoch: string } }
   | { kind: 'event-apply-failed'; payload: { dmChannelId: string; epoch: string } }
+  | { kind: 'event-key-change'; payload: { userId: string; candidateAik: string; pinnedAik: string; self: boolean } }
+  | { kind: 'event-key-change-resolved'; payload: { userId: string } }
   | { kind: 'readiness'; active: boolean; readyChannelIds: string[] };
 
 /** The async public-coordinator methods the dispatcher proxies into the worker.
@@ -127,7 +142,8 @@ export type ProxiedMethod =
   | 'createDmGroup' | 'createGroupDmGroup' | 'establishChannel' | 'establishGroupDmChannel'
   | 'addGroupMembers' | 'removeGroupMembers' | 'removeAbsentLeaver' | 'handleGroupLeaderElection'
   | 'joinViaExternalCommit' | 'encrypt' | 'decrypt' | 'deriveSframeBaseKey'
-  | 'endOtrGroup' | 'listOtrChannels';
+  | 'endOtrGroup' | 'listOtrChannels'
+  | 'acceptKeyChange' | 'listKeyChangeAlerts' | 'recoverChannelAfterKeyChange';
 
 // Re-export for convenience (the worker host threads these through generically).
 export type { MlsClientState, MlsIdentityBundle };

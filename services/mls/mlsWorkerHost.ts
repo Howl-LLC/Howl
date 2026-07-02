@@ -33,6 +33,8 @@ export interface CoreApi {
   mlsEvents: { on(cb: (e: 'mls-ready' | 'mls-locked') => void): () => void };
   onEpochChange(cb: (e: { dmChannelId: string; groupId: string; epoch: string }) => void): () => void;
   onApplyFailed(cb: (p: { dmChannelId: string; epoch: string }) => void): () => void;
+  onKeyChange(cb: (p: { userId: string; candidateAik: string; pinnedAik: string; self: boolean }) => void): () => void;
+  onKeyChangeResolved(cb: (p: { userId: string }) => void): () => void;
   // proxied async methods (indexable):
   [method: string]: unknown;
 }
@@ -59,6 +61,7 @@ export function createWorkerHost(core: CoreApi) {
   // 'socket-event' case awaits before refreshing the readiness mirror.
   let commitCb: ((e: { groupId: string; epoch: string; commit: string }) => void | Promise<void>) | null = null;
   let welcomeCb: ((e: { groupId: string; epoch: string }) => void | Promise<void>) | null = null;
+  let groupResetCb: ((e: { dmChannelId: string; mlsGroupId: string }) => void | Promise<void>) | null = null;
   let seamsInstalled = false;
 
   function broadcast(msg: WorkerToMain): void {
@@ -141,6 +144,8 @@ export function createWorkerHost(core: CoreApi) {
       getWelcomes: (l) => rpc('getWelcomes', [l]),
       getDMs: () => rpc('getDMs', []),
       getAikChain: (u) => rpc('getAikChain', [u]),
+      getPeerAik: (u) => rpc('getPeerAik', [u]),
+      resetGroup: (g, e) => rpc('resetGroup', [g, e]),
       idempotencyKeyFor: idemLocal,
     };
   }
@@ -151,6 +156,7 @@ export function createWorkerHost(core: CoreApi) {
     const source: CommitWelcomeSource = {
       onCommit: (cb) => { commitCb = cb; return () => { if (commitCb === cb) commitCb = null; }; },
       onWelcome: (cb) => { welcomeCb = cb; return () => { if (welcomeCb === cb) welcomeCb = null; }; },
+      onGroupReset: (cb) => { groupResetCb = cb; return () => { if (groupResetCb === cb) groupResetCb = null; }; },
     };
     const classification: ClassificationSink = { markMls: (channelId) => broadcast({ kind: 'set-classification', channelId }) };
     const leadership: LeadershipGate = { isLeader, acquire: acquireLeadership, release: releaseLeadership };
@@ -160,6 +166,8 @@ export function createWorkerHost(core: CoreApi) {
     core.mlsEvents.on((e) => { broadcast({ kind: 'event', event: e }); pushReadiness(); });
     core.onEpochChange((p) => broadcast({ kind: 'event-epoch', payload: p }));
     core.onApplyFailed((p) => broadcast({ kind: 'event-apply-failed', payload: p }));
+    core.onKeyChange((p) => broadcast({ kind: 'event-key-change', payload: p }));
+    core.onKeyChangeResolved((p) => broadcast({ kind: 'event-key-change-resolved', payload: p }));
     seamsInstalled = true;
   }
 
@@ -215,11 +223,15 @@ export function createWorkerHost(core: CoreApi) {
           port.postMessage({ kind: 'rpc-result', correlationId: data.correlationId, ok: true, value });
           pushReadiness();
         } catch (err) {
-          const e = err as Error & { status?: number; reason?: 'peer-unprovisioned'; unprovisionedUserId?: string };
+          const e = err as Error & { status?: number; reason?: string; unprovisionedUserId?: string; blockedUserId?: string };
           // Thread the numeric HTTP status AND the typed establish-failure reason across
           // the rpc-result boundary so status-dependent (create-once 409) and
-          // reason-dependent (peer-unprovisioned) handling survives.
-          port.postMessage({ kind: 'rpc-result', correlationId: data.correlationId, ok: false, error: { name: e.name, message: e.message, status: e.status, reason: e.reason, unprovisionedUserId: e.unprovisionedUserId } });
+          // reason-dependent (peer-unprovisioned / key-change-blocked) handling survives.
+          port.postMessage({ kind: 'rpc-result', correlationId: data.correlationId, ok: false, error: { name: e.name, message: e.message, status: e.status, reason: e.reason, unprovisionedUserId: e.unprovisionedUserId, blockedUserId: e.blockedUserId } });
+          // A proxied method can mutate _loadedGroups BEFORE throwing (heal-drops,
+          // recoverChannelAfterKeyChange's teardown paths) — refresh the mirror on the
+          // failure path too, or the main thread stays stale-ready.
+          pushReadiness();
         }
         return;
       }
@@ -230,7 +242,11 @@ export function createWorkerHost(core: CoreApi) {
         // readiness — a synchronous pushReadiness() would broadcast the stale set (before
         // the heal's _loadedGroups.delete), leaving the main thread's readiness mirror
         // wrong (encrypt would throw "mls channel not ready" and refuse to re-establish).
-        const handled = data.event === 'commit' ? commitCb?.(data.payload) : welcomeCb?.(data.payload);
+        const handled = data.event === 'commit'
+          ? commitCb?.(data.payload)
+          : data.event === 'welcome'
+            ? welcomeCb?.(data.payload)
+            : groupResetCb?.(data.payload);
         // pushReadiness MUST run whether the handler fulfilled or rejected (a live
         // heal-drop / Welcome-join mutates _loadedGroups either way). The welcome
         // branch's joinPendingWelcomes() can REJECT with no internal catch, and a
@@ -248,8 +264,9 @@ export function createWorkerHost(core: CoreApi) {
           // Re-attach the numeric HTTP status so the core's .status-based branches
           // see it on the worker path too: create-once 409 detection AND
           // consumeOneKeyPackage's 404 -> peer-unprovisioned normalization.
-          const { name, message, status } = data.error;
-          entry.reject(Object.assign(new Error(message), { name, ...(status !== undefined ? { status } : {}) }));
+          // nonApiResponse rides along for the stale-group 404 teardown gate.
+          const { name, message, status, nonApiResponse } = data.error;
+          entry.reject(Object.assign(new Error(message), { name, ...(status !== undefined ? { status } : {}), ...(nonApiResponse !== undefined ? { nonApiResponse } : {}) }));
         }
         return;
       }

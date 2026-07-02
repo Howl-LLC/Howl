@@ -25,10 +25,10 @@ describe('protocol v1 fixtures round-trip through current schemas', () => {
     });
   }
 
-  it('every exported socket schema has a matching fixture (except signedVoiceJoinBlob)', () => {
+  it('every exported socket schema has a matching fixture (except the nested signed .strict() blobs)', () => {
     const schemaNames = Object.entries(schemas)
       .filter(([name, val]) => {
-        if (name === 'signedVoiceJoinBlob') return false; // intentionally .strict()
+        if (name === 'signedVoiceJoinBlob' || name === 'stageHostBlob') return false; // nested signed blobs, intentionally .strict()
         return typeof (val as { safeParse?: unknown }).safeParse === 'function';
       })
       .map(([name]) => name)

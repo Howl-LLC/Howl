@@ -53,6 +53,8 @@ const client = {
   createGroup: vi.fn(), getGroupInfo: vi.fn(), submitCommit: vi.fn(), catchUp: vi.fn(),
   getWelcomes: vi.fn(), getDMs: vi.fn(), idempotencyKeyFor: vi.fn(),
   getAikChain: vi.fn(async () => ({ chain: [], head: null })),
+  getPeerAik: vi.fn(async () => ({ signingPublicKey: null })),
+  resetGroup: vi.fn(async () => ({ success: true })),
   onMlsCommit: vi.fn(() => () => undefined), onMlsWelcome: vi.fn(() => () => undefined),
 };
 
@@ -77,6 +79,8 @@ beforeEach(() => {
       getWelcomes: client.getWelcomes,
       getDMs: client.getDMs,
       getAikChain: vi.fn(async () => ({ chain: [], head: null })),
+      getPeerAik: vi.fn(async () => ({ signingPublicKey: null })),
+      resetGroup: vi.fn(async () => ({ success: true })),
       idempotencyKeyFor: client.idempotencyKeyFor,
     },
     source: { onCommit: client.onMlsCommit, onWelcome: client.onMlsWelcome },

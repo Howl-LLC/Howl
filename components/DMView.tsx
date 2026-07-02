@@ -7,7 +7,7 @@ import type { ForwardPayload } from './ForwardImageModal';
 import { MemberList } from './MemberList';
 import { GroupChatContextMenu } from './GroupChatContextMenu';
 import { User, Message, GameActivity } from '../types';
-import { Users, MessageCircle, X, Loader2, Pin, ArrowLeft, Phone, PhoneOff, Video, BellOff, Gamepad2, Music, Activity, Shield, KeyRound, Eye, EyeOff, AlertTriangle, RotateCw } from 'lucide-react';
+import { Users, MessageCircle, X, Loader2, Pin, ArrowLeft, Phone, PhoneOff, Video, BellOff, Gamepad2, Music, Activity, Shield, ShieldAlert, KeyRound, Eye, EyeOff, AlertTriangle, RotateCw } from 'lucide-react';
 import { apiClient } from '../services/api';
 import { socketService } from '../services/socket';
 import { useTranslation } from 'react-i18next';
@@ -63,6 +63,7 @@ function ActivityIcon({ type, size }: { type: string; size: number }) {
 }
 
 import { GroupEditModal } from './dm/GroupEditModal';
+import { KeyChangeReviewModal, type KeyChangeReviewTarget } from './dm/KeyChangeReviewModal';
 import { AddFriendsToDmModal } from './dm/AddFriendsToDmModal';
 import { CreateGroupDmModal } from './dm/CreateGroupDmModal';
 import { InlineCallSurface } from './call/InlineCallSurface';
@@ -150,6 +151,7 @@ export interface DMChannelItem {
   blockedByThem?: boolean;
   blockedParticipantIds?: string[];
   ownerId?: string | null;
+  mlsGroupId?: string | null;
   otrMlsGroupId?: string | null;
 }
 
@@ -489,6 +491,7 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
   const [directModalFriends, setDirectModalFriends] = useState<User[]>([]);
   const [directModalLoading, setDirectModalLoading] = useState<string | null>(null);
   const [addFriendsToDmModalOpen, setAddFriendsToDmModalOpen] = useState(false);
+  const [keyChangeReview, setKeyChangeReview] = useState<KeyChangeReviewTarget | null>(null);
   const friendListVersion = useSocialStore(s => s.friendListVersion);
 
   // Invalidate friends cache when friend list changes so modals get fresh data on next open
@@ -821,12 +824,13 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
   const resyncNeededForActive = useUiStore((s) => activeDmChannelId ? !!s.resyncNeededChannels[activeDmChannelId] : false);
   const establishFailureForActive = useUiStore((s) => activeDmChannelId ? s.establishFailureReasons[activeDmChannelId] : undefined);
   const peerUnprovisioned = establishFailureForActive?.reason === 'peer-unprovisioned';
-  const unprovisionedName = peerUnprovisioned
+  const keyChangeBlockedForActive = establishFailureForActive?.reason === 'key-change-blocked';
+  const unprovisionedName = (peerUnprovisioned || keyChangeBlockedForActive)
     ? (activeDm?.isGroup
         ? (activeDm?.otherUsers?.find((u) => u.id === establishFailureForActive?.userId)?.username ?? 'a member')
         : (activeDm?.otherUser?.username ?? 'this user'))
     : null;
-  const sendDisabled = !!(blockedByMe || blockedByThem || blockedInGroup || mlsLockedForActive || peerUnprovisioned);
+  const sendDisabled = !!(blockedByMe || blockedByThem || blockedInGroup || mlsLockedForActive || peerUnprovisioned || keyChangeBlockedForActive);
   // The amber full-width banner is for DM blocks only. The MLS-locked case is
   // already surfaced by the cyan locked strip (with a Restore action) in topBanner,
   // so excluding it here avoids a redundant double-banner. The composer stays
@@ -844,9 +848,11 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
     blockBanner ??
     (mlsLockedForActive
       ? t('encryption.mlsLockedComposer', 'Secure messaging is locked')
-      : peerUnprovisioned
-        ? t('encryption.peerUnprovisionedComposer', { name: unprovisionedName, defaultValue: 'Waiting for {{name}} to enable encryption' })
-        : null);
+      : keyChangeBlockedForActive
+        ? t('encryption.keyChangeComposer', { name: unprovisionedName, defaultValue: "{{name}}'s security key changed — review it to continue" })
+        : peerUnprovisioned
+          ? t('encryption.peerUnprovisionedComposer', { name: unprovisionedName, defaultValue: 'Waiting for {{name}} to enable encryption' })
+          : null);
   const otherUser = activeDm?.otherUser;
   const isActiveGroup = !!activeDm?.isGroup;
   // Per-(channel, tier) room key drives the message-store bucket: 'saved' keeps
@@ -863,6 +869,24 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
   const recoverabilityState = (otherUser && !isActiveGroup)
     ? resolveRecoverabilityState(activeDm?.serverReadable, dmKeyManager.isPasswordDerived())
     : null;
+  // Key-change acknowledge: a participant of the ACTIVE MLS channel (or this account
+  // itself, whose stale self-pin blocks every channel) has a pending AIK pin
+  // rejection awaiting the user's accept/reject decision.
+  const keyChangeAlerts = useUiStore((s) => s.keyChangeAlerts);
+  const keyChangeAlertForActive = useMemo(() => {
+    if (!activeDm || !activeDmChannelId || !currentUser || !isChannelMls(activeDmChannelId)) return null;
+    const self = keyChangeAlerts[currentUser.id];
+    if (self) return { userId: currentUser.id, username: currentUser.username, alert: self };
+    if (activeDm.isGroup) {
+      for (const u of activeDm.otherUsers ?? []) {
+        if (keyChangeAlerts[u.id]) return { userId: u.id, username: u.username, alert: keyChangeAlerts[u.id] };
+      }
+      return null;
+    }
+    const peer = activeDm.otherUser;
+    if (peer && keyChangeAlerts[peer.id]) return { userId: peer.id, username: peer.username, alert: keyChangeAlerts[peer.id] };
+    return null;
+  }, [activeDm, activeDmChannelId, currentUser, keyChangeAlerts]);
   const showProfileColumn = !!otherUser && !isActiveGroup && !!activeDmChannelId && !isMobile;
   const otherUserForPanel = useMemo(() => (otherUser ? ({
     id: otherUser.id,
@@ -1452,7 +1476,7 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
                       messages stay intact; self-heals when the channel's epoch next
                       advances (App.tsx onEpochChange clears the flag). Suppressed while
                       the harder mlsLockedForActive strip is showing. */}
-                  {resyncNeededForActive && !mlsLockedForActive && (
+                  {resyncNeededForActive && !mlsLockedForActive && !keyChangeAlertForActive && (
                     <div className="px-4 py-2.5 border-b shrink-0 flex items-center gap-3 border-[var(--cyan-accent)]/20 bg-[var(--cyan-accent)]/8">
                       <Shield size={15} className="shrink-0 text-[var(--cyan-accent)]" />
                       <div className="flex-1 min-w-0">
@@ -1469,6 +1493,44 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
                         className="btn-cta shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px]"
                       >
                         <RotateCw size={13} /> {t('encryption.mlsResyncReload', 'Resync')}
+                      </button>
+                    </div>
+                  )}
+                  {/* Key-change acknowledge: a participant's (or this account's own)
+                      security key changed without an attested rotation. Messaging with
+                      them stays fail-closed until the user reviews and accepts the new
+                      key — this strip is the entry point (never auto-accepted).
+                      Suppressed under the harder MLS-locked strip; supersedes the
+                      generic resync strip (it names the actual cause). */}
+                  {keyChangeAlertForActive && !mlsLockedForActive && (
+                    <div className="px-4 py-2.5 border-b shrink-0 flex items-center gap-3 border-amber-500/25 bg-amber-500/10">
+                      <ShieldAlert size={15} className="shrink-0 text-amber-500" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-amber-500 leading-tight">
+                          {keyChangeAlertForActive.alert.self
+                            ? t('encryption.keyChangeSelfTitle', 'Your security key changed')
+                            : t('encryption.keyChangeTitle', { name: keyChangeAlertForActive.username, defaultValue: "{{name}}'s security key changed" })}
+                        </p>
+                        <p className="text-[11px] text-t-secondary leading-snug">
+                          {t('encryption.keyChangeDesc', 'Secure messaging is paused until you review and accept the change.')}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setKeyChangeReview({
+                          userId: keyChangeAlertForActive.userId,
+                          username: keyChangeAlertForActive.username,
+                          candidateAik: keyChangeAlertForActive.alert.candidateAik,
+                          pinnedAik: keyChangeAlertForActive.alert.pinnedAik,
+                          self: keyChangeAlertForActive.alert.self,
+                          dmChannelId: activeDmChannelId!,
+                          isGroup: isActiveGroup,
+                          mlsGroupId: activeDm?.mlsGroupId ?? null,
+                          recipientUserId: !isActiveGroup ? (otherUser?.id ?? null) : null,
+                        })}
+                        className="btn-cta shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px]"
+                      >
+                        <ShieldAlert size={13} /> {t('encryption.keyChangeReview', 'Review')}
                       </button>
                     </div>
                   )}
@@ -1742,7 +1804,13 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
               sendDisabled={sendDisabled}
               blockBanner={blockBanner}
               composerPlaceholder={composerPlaceholder}
-              callBlockedReason={peerUnprovisioned ? t('voiceCall.peerUnprovisioned', { name: unprovisionedName, defaultValue: 'Waiting for {{name}} to enable encryption' }) : null}
+              callBlockedReason={
+                keyChangeBlockedForActive
+                  ? t('encryption.keyChangeComposer', { name: unprovisionedName, defaultValue: "{{name}}'s security key changed — review it to continue" })
+                  : peerUnprovisioned
+                    ? t('voiceCall.peerUnprovisioned', { name: unprovisionedName, defaultValue: 'Waiting for {{name}} to enable encryption' })
+                    : null
+              }
               rateLimitBanner={rateLimitBanner}
               messageSendError={messageSendError}
               pinnedMessageIds={pinnedMessageIds}
@@ -1906,6 +1974,14 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
           </div>
         )}
       </div>
+
+      {keyChangeReview && (
+        <KeyChangeReviewModal
+          target={keyChangeReview}
+          onClose={() => setKeyChangeReview(null)}
+          showToast={onShowToast ? (m, ty) => onShowToast(m, ty) : undefined}
+        />
+      )}
 
       {groupEditModalOpen && activeDmChannelId && activeDm?.isGroup && (
           <GroupEditModal

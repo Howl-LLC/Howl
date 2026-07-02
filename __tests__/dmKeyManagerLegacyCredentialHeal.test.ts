@@ -233,7 +233,7 @@ describe('dmKeyManager: legacy MLS-credential self-heal on unlock', () => {
   }, 30000);
 
   it('re-cross-signs + republishes + activates when a valid v2 credential embeds a STALE AIK (roaming-rotation poison)', async () => {
-    // The roaming-identity incident: a rotation swapped the account AIK (+ the
+    // The roaming-rotation poison: a rotation swapped the account AIK (+ the
     // signingPublicKey column) but left this device's credential cross-signed under the
     // OLD AIK. The credential is a well-formed v2 struct, so the undecodable-heal does
     // NOT fire — only the AIK-divergence heal catches it. Without it, every published

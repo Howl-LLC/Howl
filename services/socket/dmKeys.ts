@@ -6,6 +6,8 @@ declare module './core' {
   interface SocketService {
     onDmKeyRotationNeeded(callback: (data: { dmChannelId: string; oldestMemberId: string; memberIds: string[]; leaverId?: string }) => void): void;
     offDmKeyRotationNeeded(): void;
+    onDmEncryptionReset(callback: (data: { userId: string }) => void): void;
+    offDmEncryptionReset(): void;
   }
 }
 
@@ -16,4 +18,15 @@ SocketService.prototype.onDmKeyRotationNeeded = function(this: SocketService, ca
 
 SocketService.prototype.offDmKeyRotationNeeded = function(this: SocketService) {
   this.socket?.off('dm-key-rotation-needed');
+};
+
+// A user (a DM partner, or this account on another device) performed a full
+// encryption reset (DELETE /dms/keys/bundle).
+SocketService.prototype.onDmEncryptionReset = function(this: SocketService, callback) {
+  this.socket?.off('dm-encryption-reset');
+  this.socket?.on('dm-encryption-reset', callback);
+};
+
+SocketService.prototype.offDmEncryptionReset = function(this: SocketService) {
+  this.socket?.off('dm-encryption-reset');
 };

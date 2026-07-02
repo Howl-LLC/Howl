@@ -46,6 +46,8 @@ describe('createWorkerHost', () => {
       mlsEvents: { on: vi.fn().mockReturnValue(() => {}) },
       onEpochChange: vi.fn().mockReturnValue(() => {}),
       onApplyFailed: vi.fn().mockReturnValue(() => {}),
+      onKeyChange: vi.fn().mockReturnValue(() => {}),
+      onKeyChangeResolved: vi.fn().mockReturnValue(() => {}),
     };
   });
 

@@ -127,6 +127,12 @@ export interface TrustRecord {
   aikHistory?: string[];             // AIKs we have walked through, oldest -> newest, ending at pinnedAik. Backward acceptance uses ONLY this.
   pinnedSeq?: number;                // anti-rollback floor: seq of the link that produced pinnedAik (0 for a genesis TOFU pin)
   rotatedAt?: number;                // when the pin last advanced across a rotation
+  // Key-change acknowledgement (optional; absent when no rejection is pending).
+  // Candidate AIKs this device DEFINITIVELY rejected (chain fetched, verdict
+  // 'reject'): the raw material for the warn+acknowledge UI. Cleared when the pin
+  // moves (attested advance, self-heal, or user accept). Never consulted by the
+  // verification path itself — recording a rejection must not weaken it.
+  rejectedAiks?: string[];
 }
 
 // On-disk: keyPath userId cleartext; the rest of the record is wrapped under the
@@ -1042,6 +1048,82 @@ export function setRotationChainFetcher(fn: RotationChainFetcher | null): void {
   _rotationChainFetcher = fn;
 }
 
+// --- Key-change acknowledgement wiring (warn+accept UI for post-reset key changes) ---
+
+/** A definitive pin rejection this device recorded (candidate AIK failed the
+ *  attested-rotation walk). `self` = the rejected identity is the account's own
+ *  userId (a stale self-pin, e.g. after an encryption reset on this device's past). */
+export interface PinRejection {
+  userId: string;
+  candidateAik: string;
+  pinnedAik: string;
+  self: boolean;
+}
+
+/** Bound the per-user rejected-candidate list (FIFO). A peer can present at most a
+ *  handful of distinct AIKs between user acknowledgements; 8 is generous. */
+const MAX_REJECTED_AIKS = 8;
+
+// The account's OWN current AIK (set by the coordinator at activate from its own
+// credential). Possession-proof self-heal: a pin mismatch for our own userId whose
+// candidate IS the key we currently hold is provably ours — we re-pin instead of
+// stranding every join on a stale self-pin. Any OTHER candidate under our userId
+// still fails closed (the anti-injection property is untouched).
+let _ownAikHint: { userId: string; aikB64: string } | null = null;
+export function setOwnAikHint(hint: { userId: string; aikB64: string } | null): void {
+  _ownAikHint = hint;
+}
+
+// Notified (fire-and-forget) when a NEW definitive rejection is recorded, so the
+// coordinator can surface the warn+acknowledge UI. Deduped per (userId, candidate):
+// re-validations of an already-recorded rejection stay silent (the UI hydrates
+// persisted rejections itself via listPinRejections).
+let _pinRejectionListener: ((e: PinRejection) => void) | null = null;
+export function setPinRejectionListener(fn: ((e: PinRejection) => void) | null): void {
+  _pinRejectionListener = fn;
+}
+
+function notifyPinRejection(e: PinRejection): void {
+  try {
+    _pinRejectionListener?.(e);
+  } catch (err) {
+    logger.error('[mls][trust] pin-rejection listener threw', { error: (err as Error)?.message });
+  }
+}
+
+// Notified when a user's PENDING rejections are cleared out-of-band (attested
+// advance, self-heal, or an accept in another realm) so the UI can drop a stale
+// warn+accept banner. Fire-and-forget, display-only.
+let _pinResolutionListener: ((userId: string) => void) | null = null;
+export function setPinResolutionListener(fn: ((userId: string) => void) | null): void {
+  _pinResolutionListener = fn;
+}
+
+function notifyPinResolution(userId: string): void {
+  try {
+    _pinResolutionListener?.(userId);
+  } catch (err) {
+    logger.error('[mls][trust] pin-resolution listener threw', { error: (err as Error)?.message });
+  }
+}
+
+/** Move `rec`'s pin to `newPin` WITHOUT an attested link (self-heal / user accept).
+ *  A manual move only happens after a DEFINITIVE rejection, i.e. severed continuity,
+ *  so aikHistory is TRUNCATED to the new pin: the superseded (possibly compromised)
+ *  AIK must not stay backward-acceptable via the 'lagging' path — a genuinely-lagging
+ *  old leaf resurfaces as a fresh rejection in the same warn+accept UI instead. The
+ *  anti-rollback floor resets to 0 (genesis-like pin: no link anchors a seq). Clears
+ *  pending rejections. */
+function applyManualPinMove(rec: TrustRecord, newPin: string, now: number): void {
+  rec.pinnedAik = newPin;
+  rec.pinnedSeq = 0;
+  rec.aikHistory = [newPin];
+  rec.rotatedAt = now;
+  rec.lastSeen = now;
+  if (rec.verified) rec.verified = false; // a manual move never inherits the human badge
+  delete rec.rejectedAiks;
+}
+
 interface CachedChain { chain: AikLink[]; head: AikHead | null; fetchedAt: number }
 const _chainCache = new Map<string, CachedChain>();
 const CHAIN_CACHE_TTL_MS = 60_000;
@@ -1051,7 +1133,7 @@ const CHAIN_CACHE_TTL_MS = 60_000;
  * is checked once here (a malformed served chain is cached as empty so we fail closed
  * without hammering the network); signatures are verified later, rooted at our pin, in
  * verifyChainAndConnect. Returns the cache when offline; null when offline + uncached
- * (the caller then fails closed — a transient state §D.3 retries after a prefetch).
+ * (the caller then fails closed — a transient state it retries after a prefetch).
  */
 async function getRotationChain(
   userId: string,
@@ -1078,7 +1160,7 @@ async function getRotationChain(
 
 // Per-user serialization for the trust read-modify-write. The mismatch path awaits a
 // network fetch between read and write, widening the TOCTOU window; the lock + a
-// compare-and-set on pinnedAik make the pin advance atomic per user (A10).
+// compare-and-set on pinnedAik make the pin advance atomic per user.
 const _trustLocks = new Map<string, Promise<unknown>>();
 function withTrustLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
   const prev = _trustLocks.get(userId) ?? Promise.resolve();
@@ -1145,6 +1227,31 @@ export async function pinOrVerifyAik(
       return true;
     }
 
+    // Self-heal (possession proof): a mismatch on our OWN userId whose candidate is
+    // the AIK this client currently HOLDS is provably ours (the hint comes from our
+    // own unlocked identity, never the wire). Re-pin in place — no chain needed, no
+    // network. Without this, a stale self-pin (encryption reset with a surviving
+    // trust store) rejects our own new leaf in every ratchet tree and strands every
+    // join. A candidate that is NOT our held key falls through to the normal
+    // fail-closed path: the server still cannot inject a leaf under our userId.
+    // NEVER heal BACKWARD: a candidate already in aikHistory is a superseded own key
+    // (the 'lagging' path below already accepts its leaves WITHOUT moving the pin);
+    // moving the pin back would reset the pinnedSeq anti-rollback floor and let a
+    // server that rolled our vault blob back re-anchor a forged fork chain at a
+    // leaked old key.
+    if (
+      _ownAikHint && userId === _ownAikHint.userId && aikB64 === _ownAikHint.aikB64 &&
+      !(existing.aikHistory ?? [existing.pinnedAik]).includes(aikB64)
+    ) {
+      const hadRejections = !!existing.rejectedAiks?.length;
+      applyManualPinMove(existing, aikB64, now);
+      addDevice(existing, device, now);
+      await writeTrustRow(existing);
+      logger.warn('[mls][trust] self-pin healed to own current AIK', {});
+      if (hadRejections) notifyPinResolution(userId);
+      return true;
+    }
+
     // Mismatch: the ONLY legitimate way to move (or accept around) the pin is an
     // attested rotation chain rooted at our own pin. Everything else fails closed.
     // Any unexpected error in the (server-fed) chain path is treated as a rejection
@@ -1167,7 +1274,32 @@ export async function pinOrVerifyAik(
     } catch {
       return false;
     }
-    if (verdict.kind === 'reject') return false;
+    if (verdict.kind === 'reject') {
+      // DEFINITIVE rejection: the chain was fetched and does not connect our pin to
+      // the candidate. Record it (persisted, deduped) and notify the coordinator so
+      // the warn+acknowledge UI can surface it. Still fail closed — recording never
+      // weakens verification. Re-read + CAS mirror of the advance path below: the
+      // worker and a main-thread realm share this row over IndexedDB, so the pin may
+      // have moved while we awaited the fetch.
+      const fresh = await readTrustRow(userId);
+      if (!fresh || fresh.pinnedAik !== existing.pinnedAik) {
+        return !!fresh && (fresh.pinnedAik === aikB64 || (fresh.aikHistory ?? []).includes(aikB64));
+      }
+      const rejected = fresh.rejectedAiks ?? [];
+      if (!rejected.includes(aikB64)) {
+        rejected.push(aikB64);
+        while (rejected.length > MAX_REJECTED_AIKS) rejected.shift();
+        fresh.rejectedAiks = rejected;
+        await writeTrustRow(fresh);
+        notifyPinRejection({
+          userId,
+          candidateAik: aikB64,
+          pinnedAik: fresh.pinnedAik,
+          self: !!_ownAikHint && userId === _ownAikHint.userId,
+        });
+      }
+      return false;
+    }
     if (verdict.kind === 'lagging') {
       // Older-but-genuine leaf (forward of our pin, but this device hasn't caught up).
       // Accept it; do NOT move the pin. Record the device under the unchanged pin.
@@ -1190,7 +1322,12 @@ export async function pinOrVerifyAik(
     fresh.aikHistory = verdict.history;
     fresh.rotatedAt = now;
     fresh.lastSeen = now;
-    // Verified-state hybrid (E): an unverified pin advances silently (no human assertion
+    // The pin moved via an attested rotation — pending rejections are stale. Tell the
+    // UI so a standing warn+accept banner clears itself.
+    const hadStaleRejections = !!fresh.rejectedAiks?.length;
+    delete fresh.rejectedAiks;
+    if (hadStaleRejections) notifyPinResolution(userId);
+    // Verified-state hybrid: an unverified pin advances silently (no human assertion
     // to weaken — the whole stranded-DM surface today is unverified TOFU pins). A
     // verified pin rides continuity for the rotation but DROPS verified: the old-AIK
     // holder cannot inherit the human safety-number badge; re-verification is required.
@@ -1199,6 +1336,80 @@ export async function pinOrVerifyAik(
     await writeTrustRow(fresh);
     return true;
   });
+}
+
+/**
+ * User-acknowledged pin override (the "Accept new key" action of the warn+acknowledge
+ * UI). Moves the pin to `candidateAik` ONLY when this device previously observed and
+ * definitively rejected that exact candidate (recorded in rejectedAiks) — an override
+ * can never install a key the verification path never saw, so it stays an informed
+ * consent to an OBSERVED key change, not a programmatic pin mover. Idempotent when
+ * the candidate is already the pin. Returns false (no write) when the candidate was
+ * never observed-and-rejected. Per-device by construction (trust rows never roam).
+ */
+export async function acceptPinOverride(userId: string, candidateAik: string): Promise<boolean> {
+  return withTrustLock(userId, async () => {
+    const now = Date.now();
+    const rec = await readTrustRow(userId);
+    if (!rec) {
+      // No pin exists (row cleared out-of-band): accepting is a plain TOFU pin.
+      await writeTrustRow({
+        userId,
+        pinnedAik: candidateAik,
+        verified: false,
+        firstSeen: now,
+        lastSeen: now,
+        devices: [],
+        aikHistory: [candidateAik],
+        pinnedSeq: 0,
+      });
+      return true;
+    }
+    if (rec.pinnedAik === candidateAik) {
+      // Already the pin (e.g. an attested advance or a sibling realm's accept landed
+      // first). Just clear any stale rejection state.
+      if (rec.rejectedAiks) {
+        delete rec.rejectedAiks;
+        await writeTrustRow(rec);
+        notifyPinResolution(userId);
+      }
+      return true;
+    }
+    if (!rec.rejectedAiks?.includes(candidateAik)) return false;
+    applyManualPinMove(rec, candidateAik, now);
+    await writeTrustRow(rec);
+    logger.warn('[mls][trust] pin moved by user acknowledgement', {});
+    notifyPinResolution(userId);
+    return true;
+  });
+}
+
+/** Every persisted, still-pending pin rejection (one per rejected candidate), for
+ *  hydrating the warn+acknowledge UI after a reload. Bounded by the trust store
+ *  (one row per DM peer) x MAX_REJECTED_AIKS. */
+export async function listPinRejections(): Promise<PinRejection[]> {
+  const db = await getDb();
+  const rows = (await db.getAll(STORE_TRUST)) as TrustRowOnDisk[];
+  const out: PinRejection[] = [];
+  for (const row of rows) {
+    let rec: TrustRecord;
+    try {
+      const pt = await decryptUnderDeviceWrap(row.encrypted, row.iv);
+      rec = JSON.parse(new TextDecoder().decode(pt)) as TrustRecord;
+    } catch {
+      continue; // tampered/undecryptable row: same treat-as-absent policy as readTrustRow
+    }
+    if (!rec.rejectedAiks?.length) continue;
+    for (const candidateAik of rec.rejectedAiks) {
+      out.push({
+        userId: rec.userId,
+        candidateAik,
+        pinnedAik: rec.pinnedAik,
+        self: !!_ownAikHint && rec.userId === _ownAikHint.userId,
+      });
+    }
+  }
+  return out;
 }
 
 // Device wrap key
@@ -1358,6 +1569,9 @@ export const __testHooks = {
     _rotationChainFetcher = null;
     _chainCache.clear();
     _trustLocks.clear();
+    _ownAikHint = null;
+    _pinRejectionListener = null;
+    _pinResolutionListener = null;
   },
   /** Seed a full TrustRecord (e.g. a verified pin) for tests; round-trips writeTrustRow. */
   async writeTrustRecordForTest(rec: TrustRecord) {

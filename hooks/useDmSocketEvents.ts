@@ -10,6 +10,8 @@ import { isDmChannelMuted } from '../utils/dmMuteStorage';
 // modules stay out of the main chunk (useDmSocketEvents is eagerly imported
 // by AppLayout). All call sites are fire-and-forget inside socket handlers.
 import * as mlsGroupStore from '../services/mls/mlsGroupStore';
+import * as mlsCoordinator from '../services/mls/mlsCoordinator';
+import { routeEstablishOutcome } from '../utils/mlsRetry';
 import { decryptSingleDMMessage, decryptDMContent, ENCRYPTED_PLACEHOLDER } from '../services/dmEncryption';
 import { isChannelEncrypted, isChannelMls, setChannelEncryptionStatus } from '../services/encryptionFlags';
 import { deferStoreUpdate } from '../utils/storeHelpers';
@@ -501,6 +503,40 @@ export function useDmSocketEvents(opts: UseDmSocketEventsOpts): void {
     });
     return () => {
       socketService.offDmEncryptionUpgraded();
+    };
+  }, [currentUserId]);
+
+  // A DM partner performed a full encryption reset. NEVER clear a pin here (a
+  // server-triggerable event must not weaken TOFU) — just re-attempt establish on the
+  // shared MLS channels so the key change surfaces the accept prompt through the
+  // normal validation path (or records peer-unprovisioned until they re-set-up,
+  // which the presence retry then heals).
+  useEffect(() => {
+    if (!currentUserId) return;
+    socketService.onDmEncryptionReset(({ userId }) => {
+      if (!userId || typeof userId !== 'string') return;
+      // Our own reset (this or another device): the resetting device already tore its
+      // local state down, and other own-devices can't act on a vault that no longer
+      // exists server-side — nothing safe to do here.
+      if (userId === currentUserId) return;
+      const channels = useDmStore.getState().dmChannels;
+      for (const ch of channels) {
+        const involvesUser = ch.isGroup
+          ? !!ch.otherUsers?.some((u) => u.id === userId)
+          : ch.otherUser?.id === userId;
+        if (!involvesUser || !isChannelMls(ch.id)) continue;
+        if (mlsCoordinator.isReadyForChannel(ch.id)) continue;
+        const onErr = (err: unknown) => routeEstablishOutcome(ch.id, err);
+        if (ch.isGroup) {
+          if (!ch.mlsGroupId) continue; // rowless group DMs are joiner-only (no group to establish yet)
+          void mlsCoordinator.establishGroupDmChannel(ch.id, ch.mlsGroupId).catch(onErr);
+        } else {
+          void mlsCoordinator.establishChannel(ch.id, userId, ch.mlsGroupId).catch(onErr);
+        }
+      }
+    });
+    return () => {
+      socketService.offDmEncryptionReset();
     };
   }, [currentUserId]);
 

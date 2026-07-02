@@ -56,9 +56,43 @@ function peerUnprovisionedError(userId: string): Error {
   });
 }
 
+/** A "peer's security key changed and the user has not acknowledged it" failure.
+ *  Typed like peer-unprovisioned so the worker seam carries it to the UI, which
+ *  surfaces the warn+accept banner instead of a generic establish failure. */
+function keyChangeBlockedError(userId: string): Error {
+  return Object.assign(new Error(`member ${userId} security key changed; awaiting acknowledgement`), {
+    reason: 'key-change-blocked' as const,
+    blockedUserId: userId,
+  });
+}
+
 /** Consume one KeyPackage for a member, normalizing BOTH an empty pool and a 404 from
- *  the consume route into a typed peer-unprovisioned error. Returns the KeyPackage bytes. */
+ *  the consume route into a typed peer-unprovisioned error. Returns the KeyPackage bytes.
+ *
+ *  Rejected-key negative cache: consume is DESTRUCTIVE (the server tombstones the
+ *  single-use package before we can validate it), so once this device has definitively
+ *  rejected a peer's AIK, re-consuming on every establish retry would burn one fresh
+ *  KeyPackage per attempt and steadily drain the peer's pool. When a
+ *  rejection is recorded, read the peer's CURRENT account AIK first (cheap,
+ *  non-destructive) and refuse the consume while it is still a rejected key — until
+ *  the user accepts (clears the record) or the peer rotates to a new key. */
 async function consumeOneKeyPackage(userId: string): Promise<Uint8Array> {
+  const trust = await store.getTrustRecord(userId).catch(() => null);
+  if (trust?.rejectedAiks?.length) {
+    let currentAik: string | null = null;
+    try {
+      currentAik = (await net.getPeerAik(userId)).signingPublicKey;
+    } catch (err) {
+      if ((err as { status?: number }).status === 404) throw peerUnprovisionedError(userId);
+      // Transient read failure with a standing rejection: stay blocked (fail closed)
+      // rather than burn a KeyPackage on a peer we currently distrust.
+    }
+    if (currentAik === null || trust.rejectedAiks.includes(currentAik)) {
+      throw keyChangeBlockedError(userId);
+    }
+    // The served AIK differs from every rejected candidate (e.g. an attested rotation
+    // landed since) — proceed; the consume-time trust check below still gates it.
+  }
   let consumed: Awaited<ReturnType<typeof net.consumeKeyPackages>>;
   try {
     consumed = await net.consumeKeyPackages(userId);
@@ -172,6 +206,60 @@ function emitApplyFailed(e: MlsApplyFailedEvent): void {
 }
 
 export type { MlsApplyFailedEvent };
+
+// Key-change observers
+// Fired when the trust store records a NEW definitive AIK pin rejection (the peer —
+// or, for self:true, this very account — presented a key that no attested rotation
+// chain connects to the pin). Consumers surface the warn+acknowledge UI; accepting
+// routes back through acceptKeyChange. Per-rejection, deduped by the store.
+interface MlsKeyChangeEvent {
+  userId: string;
+  candidateAik: string;
+  pinnedAik: string;
+  self: boolean;
+}
+const _keyChangeListeners = new Set<(e: MlsKeyChangeEvent) => void>();
+
+export function onKeyChange(cb: (e: MlsKeyChangeEvent) => void): () => void {
+  _keyChangeListeners.add(cb);
+  return () => {
+    _keyChangeListeners.delete(cb);
+  };
+}
+
+function emitKeyChange(e: MlsKeyChangeEvent): void {
+  for (const cb of _keyChangeListeners) {
+    try {
+      cb(e);
+    } catch (err) {
+      logger.error('[mls][key-change] listener threw', { error: (err as Error)?.message });
+    }
+  }
+}
+
+// Fired when a user's PENDING rejections resolve WITHOUT the local accept flow (an
+// attested rotation advance, the possession-proof self-heal, or an accept in another
+// realm), so a standing warn+accept banner clears instead of sticking all session.
+const _keyChangeResolvedListeners = new Set<(e: { userId: string }) => void>();
+
+export function onKeyChangeResolved(cb: (e: { userId: string }) => void): () => void {
+  _keyChangeResolvedListeners.add(cb);
+  return () => {
+    _keyChangeResolvedListeners.delete(cb);
+  };
+}
+
+function emitKeyChangeResolved(e: { userId: string }): void {
+  for (const cb of _keyChangeResolvedListeners) {
+    try {
+      cb(e);
+    } catch (err) {
+      logger.error('[mls][key-change-resolved] listener threw', { error: (err as Error)?.message });
+    }
+  }
+}
+
+export type { MlsKeyChangeEvent };
 
 // Ready-channel observers
 // Fired when a DM channel NEWLY transitions to ready (loaded + established) AFTER
@@ -348,6 +436,18 @@ export async function activate(identity: MlsIdentityBundle, atRestKey: CryptoKey
   // stranding the conversation. (The store treats our own userId like any peer — our own
   // chain governs our own leaves; no blanket self-trust.)
   store.setRotationChainFetcher((userId) => net.getAikChain(userId));
+  // Key-change acknowledgement wiring: give the trust store our OWN current AIK (from
+  // our own credential — possession-proof self-heal for a stale self-pin) and surface
+  // every NEW definitive rejection as an onKeyChange event for the warn+accept UI. A
+  // legacy (pre-v2) credential has no decodable AIK; skip the hint, never fail activate.
+  try {
+    const ownAik = decodeMlsCredentialIdentity(identity.identity.credentialIdentity).aikPub;
+    store.setOwnAikHint({ userId: identity.userId, aikB64: toBase64(ownAik) });
+  } catch {
+    store.setOwnAikHint(null);
+  }
+  store.setPinRejectionListener(emitKeyChange);
+  store.setPinResolutionListener((userId) => emitKeyChangeResolved({ userId }));
 
   // Install the REAL credential validator: cross-sig verify (check 2) + TOFU-pinned
   // AIK (check 3). The closure captures the live engine/store module bindings, so it
@@ -414,6 +514,7 @@ async function activateTail(): Promise<void> {
     if (!_active) return; // re-check after the leader-only awaits
     _unsubscribers.push(source.onCommit(handleIncomingCommit));
     _unsubscribers.push(source.onWelcome(handleIncomingWelcome));
+    if (source.onGroupReset) _unsubscribers.push(source.onGroupReset(handleGroupReset));
     startSelfUpdateScheduler(); // begin bounded PCS self-Update cadence (leader-only)
   }
 
@@ -460,6 +561,9 @@ export function deactivate(): void {
   store.setAtRestKey(null);
   store.setHistoryKey(null);
   store.setRotationChainFetcher(null);
+  store.setOwnAikHint(null);
+  store.setPinRejectionListener(null);
+  store.setPinResolutionListener(null);
   leadership.release();
   emit('mls-locked');
 }
@@ -1220,6 +1324,135 @@ export async function listOtrChannels(): Promise<string[]> {
   return out;
 }
 
+// Key-change acknowledgement (warn+accept UI)
+
+/**
+ * User accepted a changed AIK (peer's, or this account's own under a stale self-pin):
+ * move the pin to the observed-and-rejected candidate. Returns false when that exact
+ * candidate was never observed-and-rejected on this device (nothing to accept). Runs
+ * in the realm that hosts the core (worker or in-process) — the same realm whose
+ * credential validator reads the trust rows.
+ */
+export async function acceptKeyChange(userId: string, candidateAik: string): Promise<boolean> {
+  return store.acceptPinOverride(userId, candidateAik);
+}
+
+/** Persisted, still-pending pin rejections — hydrates the warn+accept UI after a reload. */
+export async function listKeyChangeAlerts(): Promise<MlsKeyChangeEvent[]> {
+  return store.listPinRejections();
+}
+
+/**
+ * Tear down a stranded 1:1 server group via the epoch-bound reset endpoint, then drop
+ * the local row. The server fans `mls-group-reset` out to both participants, so the
+ * PEER's client (handleGroupReset) drops its stale local state too. One
+ * epoch-conflict retry (a commit can land mid-flight); a 404 anywhere means a
+ * concurrent reset already won — same outcome.
+ */
+async function resetStranded1to1Group(dmChannelId: string, groupId: string): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let epoch: string;
+    try {
+      ({ groupInfoEpoch: epoch } = await net.getGroupInfo(groupId));
+    } catch (err) {
+      if ((err as { status?: number }).status === 404) break; // already gone server-side
+      throw err;
+    }
+    try {
+      await net.resetGroup(groupId, epoch);
+      break;
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (status === 404) break; // concurrent reset won
+      if (status === 409 && attempt === 0) continue; // epoch moved: refetch once
+      throw err;
+    }
+  }
+  await withChannelLock(roomKey(dmChannelId, 'saved'), async () => {
+    await dropGroupAndForget(dmChannelId, groupId);
+  });
+}
+
+/**
+ * Post-acknowledgement recovery for ONE channel with the accepted user. Ordered from
+ * least to most destructive:
+ *  1. Loaded group -> targeted catch-up: a commit this device rejected under the old
+ *     pin may now validate, converging a diverged epoch with no data loss.
+ *  2. Not loaded (or dropped) -> the normal establish resolution (Welcome ->
+ *     External Commit -> 1:1 create).
+ *  3. 1:1 only, still stranded -> POST /groups/:id/reset (epoch-bound) so BOTH sides
+ *     drop the unrecoverable group, then establish fresh. Never for group DMs (the
+ *     server forbids a single participant resetting a group).
+ */
+export async function recoverChannelAfterKeyChange(
+  dmChannelId: string,
+  recipientUserId: string | null,
+  isGroup: boolean,
+  mlsGroupId?: string | null,
+): Promise<void> {
+  if (!_active || !_identity) throw new Error('mls not active');
+  if (!isLeader()) throw new Error('mls not leader');
+  const rk = roomKey(dmChannelId, 'saved');
+
+  const loadedGroupId = _loadedGroups.get(rk);
+  if (loadedGroupId) {
+    try {
+      await withChannelLock(rk, async () => {
+        const loaded = await store.getGroup(rk);
+        if (!loaded) return;
+        const commits = await net.catchUp(loadedGroupId, loaded.meta.lastAppliedEpoch.toString());
+        let state = loaded.state;
+        for (const c of commits) {
+          state = await engine.processHandshake(state, fromBase64(c.commit));
+        }
+        if (commits.length > 0) {
+          await persistGroup(dmChannelId, loadedGroupId, state, engine.currentEpoch(state));
+        }
+      });
+      return; // caught up (or nothing pending): usable again from this side
+    } catch (err) {
+      // Orphaned at-rest row (stale-key OperationError): the established heal drops it
+      // non-destructively; fall through to establish.
+      if (await healIfOrphanedGroup(rk, loadedGroupId, err)) {
+        // dropped locally; the establish below re-resolves
+      } else if (!(await dropIfServerGone(rk, loadedGroupId, err))) {
+        if (isGroup) throw err; // group DMs: no single-participant reset; surface the failure
+        // A transient transport failure is NOT proof of a stranded group — rethrow so
+        // the UI shows the retry toast and the next open retries non-destructively.
+        if (isTransientRecoveryError(err)) throw err;
+        logger.warn('[mls][key-change] catch-up after accept failed; resetting stranded 1:1 group', {
+          channelId: dmChannelId,
+          error: (err as Error)?.message,
+        });
+        await resetStranded1to1Group(dmChannelId, loadedGroupId);
+      }
+    }
+  }
+
+  try {
+    if (isGroup) {
+      await establishGroupDmChannel(dmChannelId, mlsGroupId);
+    } else if (recipientUserId) {
+      await establishChannel(dmChannelId, recipientUserId, mlsGroupId);
+    }
+  } catch (err) {
+    if (isGroup || !recipientUserId) throw err;
+    // A transient transport failure must not destroy the server group — rethrow and
+    // let the next open retry the whole recovery.
+    if (isTransientRecoveryError(err)) throw err;
+    // 1:1 last resort: a live server group neither join path admits us to (Welcomes
+    // sealed to destroyed init keys AND an unjoinable tree). Reset + create fresh.
+    const groupId = await resolveServerGroupId(dmChannelId, 'saved');
+    if (!groupId) throw err;
+    logger.warn('[mls][key-change] establish after accept failed; resetting stranded 1:1 group', {
+      channelId: dmChannelId,
+      error: (err as Error)?.message,
+    });
+    await resetStranded1to1Group(dmChannelId, groupId);
+    await establishChannel(dmChannelId, recipientUserId, null);
+  }
+}
+
 // Message crypto (fail closed)
 
 export function encrypt(dmChannelId: string, plaintext: string, tier: MlsTier = 'saved'): Promise<string> {
@@ -1443,6 +1676,37 @@ async function handleIncomingWelcome(_e: { groupId: string; epoch: string }): Pr
   await runWelcomeDrain();
 }
 
+/**
+ * Server pushed a 1:1 group reset (`mls-group-reset`): drop the matching LOCAL group
+ * state so re-establish isn't wedged by a stale row (a loaded stale row never re-enters
+ * the establish resolution — it short-circuits on _loadedGroups). Guarded by groupId so
+ * a NEWER re-established group under the same channel is never dropped, and by the
+ * re-key barrier so a mid-re-key row isn't destroyed.
+ */
+async function handleGroupReset(e: { dmChannelId: string; mlsGroupId: string }): Promise<void> {
+  if (!isLeader()) return;
+  const rkSaved = roomKey(e.dmChannelId, 'saved');
+  await withChannelLock(rkSaved, async () => {
+    if (_rekeyBarrier) await _rekeyBarrier;
+    const loadedId = _loadedGroups.get(rkSaved);
+    if (loadedId && loadedId !== e.mlsGroupId) return; // a newer group already took over
+    if (loadedId === e.mlsGroupId) {
+      await dropGroupAndForget(e.dmChannelId, e.mlsGroupId);
+      logger.warn('[mls][group-reset] dropped local group state after server reset', { channelId: e.dmChannelId });
+      return;
+    }
+    // Not loaded (e.g. the row predates this activation's map build): drop the durable
+    // row only when it holds the RESET groupId AND belongs to this event's own
+    // saved-tier room key — a mismatched payload must not delete another channel's row.
+    const g2c = await store.getGroupIdToChannelMap();
+    const entry = g2c.get(e.mlsGroupId);
+    if (entry && entry.roomKey === rkSaved) {
+      await store.deleteGroup(entry.roomKey).catch(() => undefined);
+      logger.warn('[mls][group-reset] dropped stale durable group row after server reset', { channelId: e.dmChannelId });
+    }
+  });
+}
+
 // Welcome join + catch-up + KP replenish (leader only)
 
 /**
@@ -1636,6 +1900,7 @@ async function runSelfUpdateSweep(): Promise<void> {
           await commitSelfUpdate(dmChannelId, groupId, loaded.state);
         } catch (err) {
           if (await healIfOrphanedGroup(dmChannelId, groupId, err)) return;
+          if (await dropIfServerGone(dmChannelId, groupId, err)) return;
           logger.warn('[mls][pcs] self-update skipped; will retry next cadence', {
             channelId: dmChannelId,
             error: (err as Error)?.message,
@@ -1698,6 +1963,47 @@ async function dropGroupAndForget(dmChannelId: string, groupId: string): Promise
   _loadedGroups.delete(rk);
   _groupToChannel.delete(groupId);
   _lastEpoch.delete(rk);
+}
+
+/**
+ * Lazy stale-row teardown: the server 404ing a KNOWN group means its MlsGroup row is
+ * gone (1:1 manual reset, or the abandoned-epoch-0 heal replaced it). The local row
+ * can never converge again — drop it (and the routing entries) so the channel
+ * re-establishes via External-Commit/create on its next open instead of wedging.
+ * Mirrors healIfOrphanedGroup's re-key discipline. `rk` is the room key (the
+ * _loadedGroups iteration key).
+ */
+async function dropIfServerGone(rk: string, groupId: string, err: unknown): Promise<boolean> {
+  // Only an API-ORIGIN 404 (JSON `{ error }` body) is authoritative "group deleted".
+  // An infra 404 (dev proxy with the backend down, captive portal, CDN edge) carries
+  // status 404 too but is stamped nonApiResponse by apiClient — dropping on it would
+  // mass-destroy healthy local ratchet state during an outage.
+  if ((err as { status?: number })?.status !== 404) return false;
+  if ((err as { nonApiResponse?: boolean })?.nonApiResponse) return false;
+  if (_rekeyBarrier) await _rekeyBarrier;
+  await dropGroupAndForget(rk, groupId);
+  logger.warn('[mls] server no longer has this group (404); dropped local row, channel will re-establish', { channelId: rk });
+  return true;
+}
+
+/**
+ * Transient-vs-definitive classifier for the post-accept recovery path: a transient
+ * transport/infra failure must NEVER escalate to the destructive 1:1 group reset —
+ * the caller rethrows it and the next open retries recovery non-destructively.
+ */
+export function isTransientRecoveryError(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  if (status === 429 || (typeof status === 'number' && status >= 500)) return true;
+  if (typeof status === 'number') return false; // other HTTP statuses are definitive
+  if (err instanceof TypeError) return true; // raw fetch network failure (in-process path)
+  // apiClient re-wraps a fetch failure as a plain Error with { cause: TypeError } and no
+  // status (services/api/core.ts); across the worker boundary the cause is dropped but the
+  // canonical message survives. A network blip is NOT proof of a stranded group and must
+  // never escalate to the destructive 1:1 reset.
+  if ((err as { cause?: unknown })?.cause instanceof TypeError) return true;
+  const msg = (err as Error)?.message ?? '';
+  // Worker/net plumbing and teardown states — retryable, not proof of a stranded group.
+  return /timed out|reach the server|no live port|store locked|not active|not leader|torn down/i.test(msg);
 }
 
 async function healIfOrphanedGroup(dmChannelId: string, groupId: string, err: unknown): Promise<boolean> {
@@ -1784,6 +2090,7 @@ async function catchUpAllGroups(): Promise<void> {
         }
       } catch (err) {
         if (await healIfOrphanedGroup(dmChannelId, groupId, err)) return; // dropped + will re-establish
+        if (await dropIfServerGone(dmChannelId, groupId, err)) return; // server reset the group: dropped + will re-establish
         // Best-effort epoch for the UI hint; '0' is a "stuck epoch unknown" sentinel
         // (the second getGroup itself throws under lock or on an orphaned row).
         const loaded = await store.getGroup(dmChannelId).catch(() => null);

@@ -208,22 +208,23 @@ export async function sendDmMessage(
       tier: opts?.tier,
     });
   } catch (err) {
-    // When a toast handler is provided, surface the error in-app and swallow.
-    // When omitted, preserve the historical behavior of re-throwing so callers
-    // (e.g. InviteModal) can drive their own UI feedback via try/catch.
+    // When this channel's establish failed with a typed reason (peer-unprovisioned /
+    // key-change-blocked), map the misleading 'unlock encryption' not-ready error to
+    // the real copy for BOTH surfaces below. Unmapped errors pass through unchanged.
+    const surfaced = describeSendBlock(dmChannelId, err);
+    // With a toast handler, surface the error in-app and swallow. Without one, re-throw
+    // so callers (e.g. InviteModal) can drive their own UI feedback via try/catch.
     if (!opts?.showToast) {
-      // When this channel's establish failed peer-unprovisioned, surface the
-      // waiting copy instead of the misleading 'unlock encryption' not-ready error
-      // (InviteModal renders e.message directly). Unmapped errors pass through and
-      // keep the historical __expected stamp; a mapped error carries its own.
-      const surfaced = describeSendBlock(dmChannelId, err);
       if (surfaced instanceof Error && surfaced.message.includes('Encryption unavailable')) {
         (surfaced as any).__expected = true;
       }
       throw surfaced;
     }
     if (err instanceof Error && err.message.includes('Encryption unavailable')) {
-      opts.showToast('Encryption is still loading — try again in a moment.', 'warning');
+      // A mapped error names the actual block (who to wait on / whose key to review);
+      // keep the generic still-loading copy only for genuinely-unmapped not-ready errors.
+      const mapped = surfaced instanceof Error && !surfaced.message.includes('Encryption unavailable');
+      opts.showToast(mapped ? (surfaced as Error).message : 'Encryption is still loading — try again in a moment.', 'warning');
       return;
     }
     const isRateLimit = !!(err && ((err as any).isRateLimit || (err instanceof Error && err.message.toLowerCase().includes('rate limit'))));
@@ -513,12 +514,14 @@ export async function getOrCreateEncryptedDM(
   try {
     await mlsCoordinator.establishChannel(dm.id, recipientId);
   } catch (err) {
-    // Record the typed failure for this channel's UI. peer-unprovisioned is a
-    // SOFT outcome: the channel exists and is classified, sends stay fail-closed,
-    // and the composer shows who to wait on - so let the open proceed. Anything
-    // else is a real failure and still rejects.
+    // Record the typed failure for this channel's UI. peer-unprovisioned and
+    // key-change-blocked are SOFT outcomes: the channel exists and is classified,
+    // sends stay fail-closed, and the composer/banner explain the block (for a key
+    // change, the review banner LIVES in the DM — the open must proceed so the user
+    // can reach it). Anything else is a real failure and still rejects.
     routeEstablishOutcome(dm.id, err);
-    if ((err as { reason?: string }).reason !== 'peer-unprovisioned') throw err;
+    const reason = (err as { reason?: string }).reason;
+    if (reason !== 'peer-unprovisioned' && reason !== 'key-change-blocked') throw err;
   }
   return dm;
 }

@@ -4,7 +4,7 @@
  * Converge-on-rotate: the roaming-identity rotation re-cross-signs this device's MLS
  * credential and republishes its KeyPackages under the NEW AIK.
  *
- * Root cause of the DM "encryption still loading" incident: a roaming-identity
+ * Root cause of the DM "encryption still loading" wedge: a roaming-identity
  * rotation mints a fresh Ed25519 AIK and writes it to the DmKeyBundle.signingPublicKey
  * column, but the device's MLS credential + already-published KeyPackages stay
  * cross-signed under the OLD AIK. The publish gate pins each KeyPackage's embedded AIK

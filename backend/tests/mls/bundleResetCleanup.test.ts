@@ -8,10 +8,12 @@ import { createTestUser, authHeader, cleanupTestData, type TestUser } from '../h
 import { prisma } from '../../src/db.js';
 
 let user: TestUser;
+let peer: TestUser;
 let deviceId: string;
 
 beforeAll(async () => {
   user = await createTestUser();
+  peer = await createTestUser();
   deviceId = randomUUID();
   await prisma.dmKeyBundle.create({
     data: {
@@ -44,9 +46,28 @@ beforeAll(async () => {
       },
     ],
   });
+  // A pending Welcome sealed to the resetter's (about to be destroyed) init keys, and
+  // one addressed to a PEER — the reset must purge only the resetter's.
+  await prisma.mlsWelcome.createMany({
+    data: [
+      { recipientId: user.id, groupId: randomUUID(), epoch: 1n, welcomeData: Buffer.from('w') },
+      { recipientId: peer.id, groupId: randomUUID(), epoch: 1n, welcomeData: Buffer.from('w') },
+    ],
+  });
+  // A now-orphaned AIK rotation chain + head (the reset ends the lineage; re-setup
+  // mints an unlinked genesis AIK).
+  await prisma.aikRotation.create({
+    data: { userId: user.id, seq: 1, oldAik: 'old', newAik: 'new', signature: 's', context: 'howl:mls:aik-rotation:v1' },
+  });
+  await prisma.aikHead.create({
+    data: { userId: user.id, seq: 1, aik: 'new', signature: 's' },
+  });
 });
 
 afterAll(async () => {
+  await prisma.mlsWelcome.deleteMany({});
+  await prisma.aikRotation.deleteMany({});
+  await prisma.aikHead.deleteMany({});
   await prisma.mlsKeyPackage.deleteMany({});
   await prisma.dmKeyBundle.deleteMany({});
   await cleanupTestData();
@@ -68,5 +89,15 @@ describe('DELETE /api/dms/keys/bundle — MLS KeyPackage cleanup', () => {
     // No orphaned no-expiry last-resort row a future adder could still consume.
     const lastResort = await prisma.mlsKeyPackage.count({ where: { userId: user.id, isLastResort: true } });
     expect(lastResort).toBe(0);
+  });
+
+  it('purges the resetter pending MlsWelcome rows (sealed to destroyed init keys) but not others', async () => {
+    expect(await prisma.mlsWelcome.count({ where: { recipientId: user.id } })).toBe(0);
+    expect(await prisma.mlsWelcome.count({ where: { recipientId: peer.id } })).toBe(1);
+  });
+
+  it('clears the now-orphaned AIK rotation chain and head', async () => {
+    expect(await prisma.aikRotation.count({ where: { userId: user.id } })).toBe(0);
+    expect(await prisma.aikHead.count({ where: { userId: user.id } })).toBe(0);
   });
 });

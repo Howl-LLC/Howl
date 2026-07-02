@@ -86,14 +86,24 @@ interface UiState {
   resyncNeededChannels: Record<string, true>;
   markChannelNeedsResync(dmChannelId: string): void;
   clearChannelResync(dmChannelId: string): void;
-  /** Per-channel typed MLS establish-failure reason. Today only 'peer-unprovisioned'
-   *  (the peer has published no MLS KeyPackages, so the group can't be formed). `userId`
-   *  names the offending member (for group DMs) so the UI can say who to wait on.
-   *  Self-heals: cleared when the channel becomes ready (App.tsx onReadyChannel) or on a
-   *  successful re-establish. In-memory, per-tab. */
-  establishFailureReasons: Record<string, { reason: 'peer-unprovisioned'; userId?: string }>;
-  setEstablishFailureReason(dmChannelId: string, reason: 'peer-unprovisioned', userId?: string): void;
+  /** Per-channel typed MLS establish-failure reason: 'peer-unprovisioned' (the peer
+   *  has published no MLS KeyPackages, so the group can't be formed) or
+   *  'key-change-blocked' (the peer's AIK changed without an attested rotation and the
+   *  user hasn't acknowledged it yet). `userId` names the offending member so the UI
+   *  can say who to wait on / whose key to review. Self-heals: cleared when the channel
+   *  becomes ready (App.tsx onReadyChannel) or on a successful re-establish. In-memory,
+   *  per-tab. */
+  establishFailureReasons: Record<string, { reason: 'peer-unprovisioned' | 'key-change-blocked'; userId?: string }>;
+  setEstablishFailureReason(dmChannelId: string, reason: 'peer-unprovisioned' | 'key-change-blocked', userId?: string): void;
   clearEstablishFailure(dmChannelId: string): void;
+  /** Per-USER pending key-change alerts (AIK pin rejections awaiting the user's
+   *  accept/reject decision), keyed by the peer's userId (`self: true` = this account's
+   *  own userId under a stale self-pin). Fed by mlsCoordinator.onKeyChange and hydrated
+   *  from the persisted trust store on mls-ready; cleared on accept. Bounded by the
+   *  user's DM peers. */
+  keyChangeAlerts: Record<string, { candidateAik: string; pinnedAik: string; self: boolean }>;
+  setKeyChangeAlert(userId: string, alert: { candidateAik: string; pinnedAik: string; self: boolean }): void;
+  clearKeyChangeAlert(userId: string): void;
   showE2eInfoBanner: boolean;
   encryptionChoicePassword: string | null;
   /** Action to run after the user completes the E2E passphrase modal (unlock or setup). */
@@ -164,6 +174,7 @@ export const useUiStore = create<UiState>()((set) => ({
   mlsReadyTick: 0,
   resyncNeededChannels: {},
   establishFailureReasons: {},
+  keyChangeAlerts: {},
   showE2eInfoBanner: false,
   encryptionChoicePassword: null,
   pendingE2eAction: null,
@@ -222,6 +233,21 @@ export const useUiStore = create<UiState>()((set) => ({
       const next = { ...s.establishFailureReasons };
       delete next[dmChannelId];
       return { establishFailureReasons: next };
+    });
+  },
+  setKeyChangeAlert(userId, alert) {
+    set((s) => {
+      const prev = s.keyChangeAlerts[userId];
+      if (prev && prev.candidateAik === alert.candidateAik && prev.pinnedAik === alert.pinnedAik && prev.self === alert.self) return s;
+      return { keyChangeAlerts: { ...s.keyChangeAlerts, [userId]: alert } };
+    });
+  },
+  clearKeyChangeAlert(userId) {
+    set((s) => {
+      if (!s.keyChangeAlerts[userId]) return s;
+      const next = { ...s.keyChangeAlerts };
+      delete next[userId];
+      return { keyChangeAlerts: next };
     });
   },
   setShowE2eInfoBanner(v) { set({ showE2eInfoBanner: v }); },

@@ -23,6 +23,8 @@ export function mainNetwork(): MlsNetwork {
     catchUp: (groupId, since, limit) => mlsClient.catchUp(groupId, since, limit),
     getWelcomes: (limit) => mlsClient.getWelcomes(limit),
     getAikChain: (userId) => mlsClient.getAikChain(userId),
+    getPeerAik: (userId) => mlsClient.getPeerAik(userId),
+    resetGroup: (groupId, expectedEpoch) => mlsClient.resetGroup(groupId, expectedEpoch),
     getDMs: async (): Promise<MlsDmSummary[]> => {
       const dms = await apiClient.getDMs();
       return dms.map((d) => ({ id: d.id, mlsGroupId: d.mlsGroupId, otrMlsGroupId: (d as { otrMlsGroupId?: string | null }).otrMlsGroupId ?? null }));
@@ -35,6 +37,7 @@ export function mainCommitWelcomeSource(): CommitWelcomeSource {
   return {
     onCommit: (cb) => mlsClient.onMlsCommit(cb),
     onWelcome: (cb) => mlsClient.onMlsWelcome(cb),
+    onGroupReset: (cb) => mlsClient.onMlsGroupReset(cb),
   };
 }
 

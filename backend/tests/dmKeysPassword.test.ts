@@ -6,7 +6,7 @@
  * A password change re-encrypts the blob (whose privateSigningKey = the account AIK)
  * under a new key/salt. The client now sends the matching signingPublicKey so the
  * column moves atomically with the blob — closing the column != blob divergence class
- * (the roaming-rotation poison behind the MLS "encryption still loading" incident).
+ * (the roaming-rotation poison behind the MLS "encryption still loading" wedge).
  * A legacy client that omits it must leave the column untouched.
  */
 

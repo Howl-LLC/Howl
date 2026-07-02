@@ -106,7 +106,7 @@ describe('POST /api/v1/dms/keys/recover', () => {
     const BLOB_AIK = Buffer.from('canonical-aik-inside-recovered-bl').toString('base64');
 
     // Seed a bundle whose signingPublicKey column has diverged from the blob's AIK
-    // (the incident's poisoned-column state).
+    // (the poisoned-column state).
     await prisma.dmKeyBundle.upsert({
       where: { userId: user.id },
       create: {

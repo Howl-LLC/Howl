@@ -87,7 +87,7 @@ describe('aikRotation — signatures verify under the right key only', () => {
   });
 });
 
-describe('aikRotation — domain separation registry (C-4)', () => {
+describe('aikRotation — domain separation registry', () => {
   it('a head signature cannot be replayed as a link signature (and vice versa)', () => {
     const userId = randomUUID();
     const a = kp();

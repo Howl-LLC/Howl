@@ -26,11 +26,14 @@ type MlsLockState = 'mls-ready' | 'mls-locked';
 const _lockListeners = new Set<(e: MlsLockState) => void>();
 export interface MlsLockEvents { on(cb: (e: MlsLockState) => void): () => void; }
 export const mlsEvents: MlsLockEvents = { on(cb) { _lockListeners.add(cb); return () => _lockListeners.delete(cb); } };
-// Dedup latch (mirrors the core's): a worker can deliver mls-locked from more than
-// one path (core.deactivate emit + a failure handler); never double-fire to listeners.
-let _lockedEmitted = false;
+// Dedup latch (mirrors the core's), generalized to BOTH states: a worker can deliver
+// mls-locked from more than one path (deactivate emit + a failure handler), and
+// 'mls-ready' can arrive twice on a leader activate (the core's real event + the
+// readiness-push synthesis below); never double-fire either state to listeners.
+let _lastLockEmitted: MlsLockState | null = null;
 function emitLock(e: MlsLockState): void {
-  if (e === 'mls-locked') { if (_lockedEmitted) return; _lockedEmitted = true; } else { _lockedEmitted = false; }
+  if (e === _lastLockEmitted) return;
+  _lastLockEmitted = e;
   for (const cb of _lockListeners) { try { cb(e); } catch (err) { logger.error('[mls][dispatch] lock listener threw', { error: (err as Error)?.message }); } }
 }
 
@@ -44,10 +47,22 @@ const _applyFailedListeners = new Set<(e: MlsApplyFailedEvent) => void>();
 export function onApplyFailed(cb: (e: MlsApplyFailedEvent) => void): () => void { _applyFailedListeners.add(cb); return () => { _applyFailedListeners.delete(cb); }; }
 function emitApplyFailed(e: MlsApplyFailedEvent): void { for (const cb of _applyFailedListeners) { try { cb(e); } catch (err) { logger.error('[mls][dispatch] apply-failed listener threw', { error: (err as Error)?.message }); } } }
 
-// Emitted when the local DM history archive is restored for a channel
-// (dmChannelId set) or after the eager bulk pass (dmChannelId null). The restore
-// originates on the main thread, so emitHistoryRestored is exported and called
-// directly — no worker round-trip.
+// A NEW definitive AIK pin rejection (key-change acknowledgement UI). Fed by the
+// worker's event-key-change broadcast / core.onKeyChange on the fallback.
+export interface MlsKeyChangeEvent { userId: string; candidateAik: string; pinnedAik: string; self: boolean; }
+const _keyChangeListeners = new Set<(e: MlsKeyChangeEvent) => void>();
+export function onKeyChange(cb: (e: MlsKeyChangeEvent) => void): () => void { _keyChangeListeners.add(cb); return () => { _keyChangeListeners.delete(cb); }; }
+function emitKeyChange(e: MlsKeyChangeEvent): void { for (const cb of _keyChangeListeners) { try { cb(e); } catch (err) { logger.error('[mls][dispatch] key-change listener threw', { error: (err as Error)?.message }); } } }
+
+// A pending rejection resolved out-of-band (attested advance / self-heal / another
+// realm's accept) — consumers clear the standing warn+accept banner.
+const _keyChangeResolvedListeners = new Set<(e: { userId: string }) => void>();
+export function onKeyChangeResolved(cb: (e: { userId: string }) => void): () => void { _keyChangeResolvedListeners.add(cb); return () => { _keyChangeResolvedListeners.delete(cb); }; }
+function emitKeyChangeResolved(e: { userId: string }): void { for (const cb of _keyChangeResolvedListeners) { try { cb(e); } catch (err) { logger.error('[mls][dispatch] key-change-resolved listener threw', { error: (err as Error)?.message }); } } }
+
+// Emitted when the local DM history archive is restored for a channel (dmChannelId
+// set) or after the eager bulk pass (dmChannelId null). The restore originates on the
+// main thread, so emitHistoryRestored is exported and called directly — no worker round-trip.
 interface HistoryRestoredEvent { dmChannelId: string | null; }
 const _historyRestoredListeners = new Set<(e: HistoryRestoredEvent) => void>();
 export function onHistoryRestored(cb: (e: HistoryRestoredEvent) => void): () => void { _historyRestoredListeners.add(cb); return () => { _historyRestoredListeners.delete(cb); }; }
@@ -133,6 +148,7 @@ function startWorker(): void {
   const src = mainCommitWelcomeSource();
   _socketUnsub.push(src.onCommit((p) => post({ kind: 'socket-event', event: 'commit', payload: p })));
   _socketUnsub.push(src.onWelcome((p) => post({ kind: 'socket-event', event: 'welcome', payload: p })));
+  if (src.onGroupReset) _socketUnsub.push(src.onGroupReset((p) => post({ kind: 'socket-event', event: 'group-reset', payload: p })));
 }
 
 function rejectAllPending(err: Error): void {
@@ -166,8 +182,8 @@ async function onWorkerMessage(msg: WorkerToMain): Promise<void> {
       _pending.delete(msg.correlationId);
       if (msg.ok) p.resolve(msg.value);
       else {
-        const { name, message, status, reason, unprovisionedUserId } = msg.error;
-        p.reject(Object.assign(new Error(message), { name, ...(status !== undefined ? { status } : {}), ...(reason !== undefined ? { reason } : {}), ...(unprovisionedUserId !== undefined ? { unprovisionedUserId } : {}) }));
+        const { name, message, status, reason, unprovisionedUserId, blockedUserId } = msg.error;
+        p.reject(Object.assign(new Error(message), { name, ...(status !== undefined ? { status } : {}), ...(reason !== undefined ? { reason } : {}), ...(unprovisionedUserId !== undefined ? { unprovisionedUserId } : {}), ...(blockedUserId !== undefined ? { blockedUserId } : {}) }));
       }
       return;
     }
@@ -177,10 +193,11 @@ async function onWorkerMessage(msg: WorkerToMain): Promise<void> {
         const value = await fn(...msg.args);
         post({ kind: 'net-result', correlationId: msg.correlationId, ok: true, value });
       } catch (err) {
-        const e = err as Error & { status?: number };
+        const e = err as Error & { status?: number; nonApiResponse?: boolean };
         // Thread the numeric HTTP status (apiClient sets it on thrown errors) across
-        // the worker boundary: the core's create-once 409 branch reads .status.
-        post({ kind: 'net-result', correlationId: msg.correlationId, ok: false, error: { name: e.name, message: e.message, status: e.status } });
+        // the worker boundary: the core's create-once 409 branch reads .status, and
+        // the stale-group 404 teardown reads .nonApiResponse.
+        post({ kind: 'net-result', correlationId: msg.correlationId, ok: false, error: { name: e.name, message: e.message, status: e.status, nonApiResponse: e.nonApiResponse } });
       }
       return;
     }
@@ -188,22 +205,32 @@ async function onWorkerMessage(msg: WorkerToMain): Promise<void> {
     case 'event': { emitLock(msg.event); return; }
     case 'event-epoch': { emitEpoch(msg.payload); return; }
     case 'event-apply-failed': { emitApplyFailed(msg.payload); return; }
+    case 'event-key-change': { emitKeyChange(msg.payload); return; }
+    case 'event-key-change-resolved': { emitKeyChangeResolved(msg.payload); return; }
     case 'readiness': {
+      const wasActive = _mirrorActive;
       _mirrorActive = msg.active;
-      // Re-arm the lock-dedup latch whenever MLS becomes active again. A non-leader
-      // tab never receives an 'mls-ready' event (that is leader-only), so without this
-      // a 'mls-locked' emitted before a non-leader re-activate would stay latched and
-      // suppress the next genuine lock signal to UI consumers.
-      if (msg.active) _lockedEmitted = false;
-      // Announce channels that NEWLY became ready so the lazy history restore
-      // retries (the readiness message is the ONLY signal that adds a
-      // channel to the mirror on the worker path). Diff against the prior mirror BEFORE
-      // rebuilding it, then emit AFTER the rebuild so a listener that calls
-      // isReadyForChannel inside the callback sees the channel as ready.
+      // (The old manual lock-latch re-arm is gone: the synthesized 'mls-ready' below
+      // moves the dedup latch off 'mls-locked' on every inactive->active transition,
+      // so a later genuine lock signal always reaches UI consumers.)
+      // Announce channels that NEWLY became ready so the lazy history restore retries
+      // (the readiness message is the ONLY signal that adds a channel to the mirror on
+      // the worker path). Diff against the prior mirror BEFORE rebuilding it, then emit
+      // AFTER the rebuild so a listener that calls isReadyForChannel inside the callback
+      // sees the channel as ready.
       const newlyReady = msg.active ? msg.readyChannelIds.filter((id) => !_mirrorReady.has(id)) : [];
       _mirrorReady.clear();
       for (const id of msg.readyChannelIds) _mirrorReady.add(id);
       for (const id of newlyReady) emitReadyChannel(id);
+      // Synthesize the 'mls-ready' transition when the readiness push (not an event)
+      // flips the mirror inactive->active. Two paths land here with NO 'mls-ready'
+      // event ever reaching this tab: (1) a reload against a still-warm SharedWorker —
+      // the core is already active, so init's activate() re-emits nothing; (2) any
+      // non-leader tab ('mls-ready' is leader-only). Consumers key ready-time work
+      // (key-change alert hydration, redecrypt sweeps, archive restore) off this
+      // event, so the transition must fire regardless of which signal carried it.
+      // Emitted AFTER the mirror rebuild so listeners see fresh readiness state.
+      if (!wasActive && msg.active) emitLock('mls-ready');
       return;
     }
   }
@@ -241,6 +268,8 @@ function ensureFallback(): void {
   core.mlsEvents.on(emitLock);
   core.onEpochChange(emitEpoch);
   core.onApplyFailed(emitApplyFailed);
+  core.onKeyChange(emitKeyChange);
+  core.onKeyChangeResolved(emitKeyChangeResolved);
   core.onReadyChannel(emitReadyChannel); // in-process path
   _fallbackInstalled = true;
 }
@@ -372,6 +401,12 @@ export function decrypt(dmChannelId: string, envelopeContent: string, messageId?
 export function deriveSframeBaseKey(dmChannelId: string): Promise<{ keyB64: string; epoch: string } | null> { return proxy('deriveSframeBaseKey', [dmChannelId]); }
 export function endOtrGroup(dmChannelId: string): Promise<void> { return proxy('endOtrGroup', [dmChannelId]); }
 export function listOtrChannels(): Promise<string[]> { return proxy('listOtrChannels', []); }
+/** Key-change acknowledgement: move the pin to an observed-and-rejected candidate AIK. */
+export function acceptKeyChange(userId: string, candidateAik: string): Promise<boolean> { return proxy('acceptKeyChange', [userId, candidateAik]); }
+/** Persisted, still-pending pin rejections (hydrates the warn+accept UI after reload). */
+export function listKeyChangeAlerts(): Promise<MlsKeyChangeEvent[]> { return proxy('listKeyChangeAlerts', []); }
+/** Post-acknowledgement recovery: catch-up -> establish -> (1:1 only) epoch-bound group reset. */
+export function recoverChannelAfterKeyChange(dmChannelId: string, recipientUserId: string | null, isGroup: boolean, mlsGroupId?: string | null): Promise<void> { return proxy('recoverChannelAfterKeyChange', [dmChannelId, recipientUserId, isGroup, mlsGroupId]); }
 
 /**
  * Fire-and-forget (sync void); App.tsx does not await it. On the worker path proxy()

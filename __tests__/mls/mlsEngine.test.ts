@@ -159,7 +159,7 @@ describe('ownLeafCredentialIsLegacy', () => {
   });
 
   it('resolves the correct own leaf at a NON-zero leaf index (a joined device, not the founder)', async () => {
-    // The realistic incident shape: a device that JOINED an existing DM sits at a
+    // The realistic failure shape: a device that JOINED an existing DM sits at a
     // non-zero leaf, so the leafIndex*2 mapping must pick ITS leaf, not the founder's.
     const alice = await makeIdentity(randomUUID(), randomUUID());
     const aliceState = await createGroup(alice, randomUUID());

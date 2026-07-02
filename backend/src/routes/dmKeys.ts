@@ -681,8 +681,55 @@ router.delete('/bundle', authenticateToken, dmKeysResetLimiter, asyncHandler(asy
     // last-resort) so an encryption reset leaves no orphaned last-resort row that a
     // future adder could still consume.
     prisma.mlsKeyPackage.deleteMany({ where: { userId: req.userId } }),
+    // Reset hygiene: the user's pending MLS Welcomes are sealed to init keys whose
+    // private halves the reset just destroyed — they can never be joined and would
+    // spam "no candidate KeyPackage matched" on every future drain.
+    prisma.mlsWelcome.deleteMany({ where: { recipientId: req.userId } }),
+    // Reset hygiene: the AIK lineage ends here (re-setup mints an unlinked genesis
+    // AIK), so clear the now-orphaned rotation chain + head — mirrors the
+    // discontinuity clears on /recover and /signing-key.
+    prisma.aikRotation.deleteMany({ where: { userId: req.userId } }),
+    prisma.aikHead.deleteMany({ where: { userId: req.userId } }),
     prisma.dmKeyBundle.delete({ where: { userId: req.userId } }),
   ]);
+
+  // Best-effort fan-out so DM partners' clients (and this account's OTHER devices)
+  // learn about the reset immediately instead of on the next failed establish. The
+  // payload names only the resetter; receivers NEVER clear a pin on it (a
+  // server-triggerable event must not weaken TOFU) — they just re-attempt establish,
+  // which surfaces the key-change accept prompt through the normal validation path.
+  try {
+    const [partners, blocks] = await Promise.all([
+      prisma.dMParticipant.findMany({
+        where: {
+          userId: { not: req.userId },
+          pendingRemoval: null,
+          dmChannel: { participants: { some: { userId: req.userId } } },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+        take: 1000,
+      }),
+      // Trust & Safety: a block in either direction must not let this event act as an
+      // activity beacon to a blocked user (blocked pairs keep their DM channel rows).
+      prisma.block.findMany({
+        where: { OR: [{ blockerId: req.userId }, { blockedUserId: req.userId }] },
+        select: { blockerId: true, blockedUserId: true },
+        take: 5000,
+      }),
+    ]);
+    const blockedIds = new Set(blocks.map((b) => (b.blockerId === req.userId ? b.blockedUserId : b.blockerId)));
+    const io = req.app.get('io') as import('socket.io').Server | undefined;
+    if (io) {
+      io.to(`user:${req.userId}`).emit('dm-encryption-reset', { userId: req.userId });
+      for (const { userId } of partners) {
+        if (blockedIds.has(userId)) continue;
+        io.to(`user:${userId}`).emit('dm-encryption-reset', { userId: req.userId });
+      }
+    }
+  } catch (err) {
+    logger.warn({ userId: req.userId, error: (err as Error).message }, 'Encryption-reset fan-out failed; peers learn on next establish');
+  }
 
   logger.info({ userId: req.userId }, 'Secure DM encryption reset — bundle deleted');
   res.json({ success: true });

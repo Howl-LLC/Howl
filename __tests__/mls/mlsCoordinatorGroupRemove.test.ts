@@ -27,6 +27,10 @@ const { store, client, apiClient } = vi.hoisted(() => ({
     setAtRestKey: vi.fn(),
     setHistoryKey: vi.fn(),
     setRotationChainFetcher: vi.fn(),
+    setOwnAikHint: vi.fn(),
+    setPinRejectionListener: vi.fn(),
+    setPinResolutionListener: vi.fn(),
+    getTrustRecord: vi.fn(async () => null),
     getHistoryKey: vi.fn(() => null),
     putGroup: vi.fn(),
     getGroup: vi.fn(),
@@ -55,6 +59,8 @@ const { store, client, apiClient } = vi.hoisted(() => ({
   },
   apiClient: { getDMs: vi.fn() },
   getAikChain: vi.fn(async () => ({ chain: [], head: null })),
+  getPeerAik: vi.fn(async () => ({ signingPublicKey: null })),
+  resetGroup: vi.fn(async () => ({ success: true })),
 }));
 vi.mock('../../services/mls/mlsGroupStore', () => store);
 
@@ -87,6 +93,8 @@ beforeEach(() => {
       getWelcomes: client.getWelcomes,
       getDMs: apiClient.getDMs,
       getAikChain: vi.fn(async () => ({ chain: [], head: null })),
+      getPeerAik: vi.fn(async () => ({ signingPublicKey: null })),
+      resetGroup: vi.fn(async () => ({ success: true })),
       idempotencyKeyFor: client.idempotencyKeyFor,
     },
     source: { onCommit: () => () => {}, onWelcome: () => () => {} },

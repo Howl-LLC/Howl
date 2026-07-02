@@ -6,13 +6,17 @@ import { isChannelMls } from '../services/encryptionFlags';
 import * as mlsCoordinator from '../services/mls/mlsCoordinator';
 import { logger } from '../services/logger';
 
-/** Push a rejected establish into uiStore IFF it is the typed peer-unprovisioned
- *  failure. Generic failures are left for the caller's logging (no UI state). */
+/** Push a rejected establish into uiStore IFF it is a typed failure
+ *  (peer-unprovisioned / key-change-blocked). Generic failures are left for the
+ *  caller's logging (no UI state). */
 export function routeEstablishOutcome(dmChannelId: string, err: unknown): void {
   const reason = (err as { reason?: string }).reason;
   if (reason === 'peer-unprovisioned') {
     const userId = (err as { unprovisionedUserId?: string }).unprovisionedUserId;
     useUiStore.getState().setEstablishFailureReason(dmChannelId, 'peer-unprovisioned', userId);
+  } else if (reason === 'key-change-blocked') {
+    const userId = (err as { blockedUserId?: string }).blockedUserId;
+    useUiStore.getState().setEstablishFailureReason(dmChannelId, 'key-change-blocked', userId);
   }
 }
 
@@ -29,12 +33,16 @@ export function routeEstablishOutcome(dmChannelId: string, err: unknown): void {
 export function describeSendBlock(dmChannelId: string, err: unknown): unknown {
   if (!(err instanceof Error) || !err.message.includes('Encryption unavailable')) return err;
   const failure = useUiStore.getState().establishFailureReasons[dmChannelId];
-  if (failure?.reason !== 'peer-unprovisioned') return err;
+  if (failure?.reason !== 'peer-unprovisioned' && failure?.reason !== 'key-change-blocked') return err;
   const ch = useDmStore.getState().dmChannels.find((c) => c.id === dmChannelId);
   const name = ch?.isGroup
     ? (ch.otherUsers?.find((u) => u.id === failure.userId)?.username ?? 'a member')
     : (ch?.otherUser?.username ?? 'this user');
-  const mapped = new Error(`Waiting for ${name} to enable encryption`);
+  const mapped = new Error(
+    failure.reason === 'key-change-blocked'
+      ? `${name}'s security key changed — review it to continue`
+      : `Waiting for ${name} to enable encryption`,
+  );
   (mapped as Error & { __expected?: boolean }).__expected = true;
   return mapped;
 }
@@ -54,6 +62,10 @@ export function retryMlsEstablishForUser(userId: string): void {
   const channels = useDmStore.getState().dmChannels;
 
   for (const channelId of failedChannelIds) {
+    // key-change-blocked can't be healed by presence: only the user's accept (or the
+    // peer rotating to a new key) unblocks it, and each retry would hit the network
+    // for the pre-consume AIK read. Presence-retry only the unprovisioned class.
+    if (failures[channelId]?.reason !== 'peer-unprovisioned') continue;
     const ch = channels.find((c) => c.id === channelId);
     if (!ch || !isChannelMls(channelId)) continue;
     // A rowless GROUP DM can't be retried here: establishGroupDmChannel is the

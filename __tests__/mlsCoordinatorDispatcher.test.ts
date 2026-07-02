@@ -16,6 +16,8 @@ describe('mlsCoordinator dispatcher', () => {
       mlsEvents: { on: vi.fn(() => () => {}) },
       onEpochChange: vi.fn(() => () => {}),
       onApplyFailed: vi.fn(() => () => {}),
+      onKeyChange: vi.fn(() => () => {}),
+      onKeyChangeResolved: vi.fn(() => () => {}),
       onReadyChannel: vi.fn(() => () => {}),
       activate: vi.fn().mockResolvedValue(undefined),
       deactivate: vi.fn(),
@@ -157,6 +159,8 @@ describe('mlsCoordinator dispatcher', () => {
       mlsEvents: { on: vi.fn(() => () => {}) },
       onEpochChange: vi.fn(() => () => {}),
       onApplyFailed: vi.fn(() => () => {}),
+      onKeyChange: vi.fn(() => () => {}),
+      onKeyChangeResolved: vi.fn(() => () => {}),
       onReadyChannel: vi.fn((cb: (id: string) => void) => { coreReadyCb = cb; return () => {}; }),
       activate: vi.fn().mockResolvedValue(undefined),
     };
@@ -400,6 +404,53 @@ describe('mlsCoordinator dispatcher', () => {
 
     expect(coreStub.activate).not.toHaveBeenCalled();                // stayed locked (no resurrection)
     expect(localStorage.getItem(WORKER_UNSUPPORTED_KEY)).toBeNull(); // and did NOT remember a "failure"
+  });
+
+  it("readiness push synthesizes 'mls-ready' when the mirror flips inactive->active with no event (warm-worker reload / non-leader tab)", async () => {
+    // A reload against a still-warm SharedWorker (core already active: init re-emits
+    // nothing) and any non-leader tab ('mls-ready' is leader-only) both flip the
+    // readiness mirror WITHOUT an 'event' broadcast. Consumers key ready-time work
+    // (key-change alert hydration, redecrypt sweeps) off mlsEvents — the transition
+    // must fire anyway.
+    let portOnMessage: any = null;
+    (globalThis as any).SharedWorker = class {
+      port = { postMessage: (_m: any) => {}, set onmessage(fn: any) { portOnMessage = fn; }, set onmessageerror(_fn: any) {}, start() {} };
+      onerror: any = null;
+      constructor(_url: unknown, _opts: unknown) {}
+    };
+    const disp = await import('../services/mls/mlsCoordinator');
+    void disp.activate(bundle as any, {} as CryptoKey, null); // spawns the worker + port (init ack not needed)
+    const events: string[] = [];
+    disp.mlsEvents.on((e) => events.push(e));
+    portOnMessage?.({ data: { kind: 'readiness', active: true, readyChannelIds: [] } });
+    expect(events).toEqual(['mls-ready']);
+    expect(disp.isActive()).toBe(true);
+    // A later readiness push while already active (e.g. a channel diff) must NOT re-fire.
+    portOnMessage?.({ data: { kind: 'readiness', active: true, readyChannelIds: ['chA'] } });
+    expect(events).toEqual(['mls-ready']);
+  });
+
+  it("no double 'mls-ready' when the real event precedes the readiness push (leader activate)", async () => {
+    let portOnMessage: any = null;
+    (globalThis as any).SharedWorker = class {
+      port = { postMessage: (_m: any) => {}, set onmessage(fn: any) { portOnMessage = fn; }, set onmessageerror(_fn: any) {}, start() {} };
+      onerror: any = null;
+      constructor(_url: unknown, _opts: unknown) {}
+    };
+    const disp = await import('../services/mls/mlsCoordinator');
+    void disp.activate(bundle as any, {} as CryptoKey, null);
+    const events: string[] = [];
+    disp.mlsEvents.on((e) => events.push(e));
+    // Leader ordering: core emits the real event during activate, THEN pushReadiness.
+    portOnMessage?.({ data: { kind: 'event', event: 'mls-ready' } });
+    portOnMessage?.({ data: { kind: 'readiness', active: true, readyChannelIds: [] } });
+    expect(events).toEqual(['mls-ready']);
+    // The generalized latch still re-arms across a lock: locked -> ready -> locked all emit.
+    portOnMessage?.({ data: { kind: 'event', event: 'mls-locked' } });
+    portOnMessage?.({ data: { kind: 'event', event: 'mls-locked' } }); // duplicate lock stays deduped
+    portOnMessage?.({ data: { kind: 'readiness', active: false, readyChannelIds: [] } });
+    portOnMessage?.({ data: { kind: 'readiness', active: true, readyChannelIds: [] } }); // non-leader re-activate
+    expect(events).toEqual(['mls-ready', 'mls-locked', 'mls-ready']);
   });
 
   it('with the unsupported flag remembered, activate() skips the worker and goes straight to the core (instant, no spawn)', async () => {

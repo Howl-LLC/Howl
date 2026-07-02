@@ -856,6 +856,48 @@ orderings agree, `electVoiceLeader` returns the same member as the old
 `participants[0]`). `scripts/check-schema-compat.ts` is not triggered (no watched
 schema path changed) and passes; `fixtures.test.ts` untouched.
 
+## 2026-07-01 — key-change acknowledge: `dm-encryption-reset` push + reset hygiene
+
+Additive. One NEW server → client event, a client listener for the EXISTING
+`mls-group-reset` push, and additional server-side deletes inside the existing
+`DELETE /api/dms/keys/bundle` transaction. No inbound schema change, no
+`protocolVersion` bump. Following the `mls-group-reset` / `otr-ended` precedent, the
+new event gets no `socketSchemas.ts` entry, so `fixtures.test.ts` (protocol-v1) is
+untouched and `scripts/check-schema-compat.ts` passes with no waiver.
+
+**Server → client (new, additive):**
+- `dm-encryption-reset { userId }` — emitted (best-effort, post-transaction) by
+  `DELETE /api/dms/keys/bundle` to the resetter's own `user:<id>` room and to every
+  distinct DM partner's room (`pendingRemoval: null`, capped at 1000). Receivers
+  NEVER clear a TOFU pin on it (a server-triggerable event must not weaken TOFU);
+  they only re-attempt establish on shared MLS channels so the key change surfaces
+  the warn+acknowledge prompt through the normal credential-validation path. Old
+  clients ignore the event.
+
+**Client adoption of an existing event:** `mls-group-reset { dmChannelId, mlsGroupId }`
+(emitted since the 1:1 reset route shipped, previously with NO listener) is now
+subscribed via `services/mls/mlsClient.ts` and relayed through the coordinator seams
+(worker `socket-event: 'group-reset'`); the core drops the matching LOCAL group row
+(groupId-guarded so a newer re-established group is never dropped) so re-establish
+isn't wedged by stale state.
+
+**`DELETE /api/dms/keys/bundle` (behavior extension, same response shape):** the
+wipe transaction now ALSO deletes the user's pending `MlsWelcome` rows (sealed to
+init keys the reset just destroyed — permanently unjoinable) and the user's
+`AikRotation`/`AikHead` chain (the lineage ends at a reset; re-setup mints an
+unlinked genesis AIK — mirrors the discontinuity clears on `/recover` and
+`/signing-key`).
+
+**Client-internal (no wire impact):** the MLS worker RPC error marshal gains
+optional `blockedUserId` and the `reason` union widens to include
+`'key-change-blocked'` (the typed pre-consume negative-cache refusal); the
+net-result marshal gains optional `nonApiResponse` (apiClient stamps it on a
+404 whose body is not the API's JSON `{ error }` shape, so the stale-group
+teardown never treats an infra 404 as an authoritative delete); the
+`MlsNetwork` seam gains `getPeerAik` (reads the existing
+`GET /dms/keys/public-key/:userId`) and `resetGroup` (calls the existing
+`POST /mls/groups/:groupId/reset`).
+
 ## 2026-06-20 - MLS persistence retention sweeps
 
 Additive, backend-only. No `protocolVersion` bump, no new/changed socket event or

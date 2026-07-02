@@ -223,8 +223,8 @@ function buildBlobContents(): BlobContents {
  */
 function signingPubFromContents(contents: BlobContents): string | undefined {
   if (!contents.privateSigningKey) return undefined;
-  // Split derive + return (no `return ...SecretKey...` on one line) so the
-  // private-key-export secret-scan rule does not false-positive on this public-key derive.
+  // Keep the derive and the return on separate lines so secret scanners do not
+  // false-positive on this public-key derive.
   const { publicKey } = nacl.sign.keyPair.fromSecretKey(fromBase64(contents.privateSigningKey));
   return toBase64(publicKey);
 }
@@ -2757,7 +2757,7 @@ async function _rotateRoamingIdentityImpl(epoch: number, userId: string): Promis
 
     try {
       // Build the rotation attestation so peers can FOLLOW this AIK rotation forward
-      // instead of stranding (the incident). The link is signed under the OLD AIK
+      // instead of stranding. The link is signed under the OLD AIK
       // (oldSign), the head under the NEW AIK (sign.secretKey); seq extends the server's
       // current head by one. A genesis install (no prior AIK) emits no link — peers
       // simply TOFU-pin the new key. If the chain fetch fails we abort (the outer catch

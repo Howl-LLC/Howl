@@ -278,10 +278,16 @@ export class APIClient {
         const text = await res.text().catch(() => '');
         let message = `Request failed with status ${res.status}`;
         let fields: Record<string, string> | undefined;
+        // A 404 whose body is not the API's JSON `{ error }` shape did not come from a
+        // route handler (dev proxy with the backend down, captive portal, CDN edge).
+        // Stamped on the error so consumers that treat a 404 as an authoritative
+        // "resource deleted" signal (e.g. the MLS stale-group teardown) can ignore it.
+        let nonApiResponse = false;
         if (res.status >= 500) {
           message = "Server error. Please try again in a moment.";
         } else if (res.status === 404 && text && text.trimStart().startsWith('<!')) {
           message = 'API not found (404). Is the backend running?';
+          nonApiResponse = true;
         } else {
           try {
             const body = text ? JSON.parse(text) : null;
@@ -289,13 +295,16 @@ export class APIClient {
             if (body && typeof body.fields === 'object' && body.fields !== null) {
               fields = body.fields as Record<string, string>;
             }
+            if (res.status === 404 && (!body || typeof body.error !== 'string')) nonApiResponse = true;
           } catch {
             if (text && text.length < 200) message = text;
+            if (res.status === 404) nonApiResponse = true;
           }
         }
-        const err = new Error(message) as Error & { status?: number; isRateLimit?: boolean; fields?: Record<string, string> };
+        const err = new Error(message) as Error & { status?: number; isRateLimit?: boolean; fields?: Record<string, string>; nonApiResponse?: boolean };
         err.status = res.status;
         if (fields) err.fields = fields;
+        if (nonApiResponse) err.nonApiResponse = true;
         if (res.status === 429) {
           err.isRateLimit = true;
           const retryAfterHeader = res.headers.get('Retry-After');

@@ -16,6 +16,9 @@ import nacl from 'tweetnacl';
 import {
   pinOrVerifyAik, getTrustRecord, __testHooks,
   setRotationChainFetcher, type RotationChainFetcher,
+  setOwnAikHint, setPinRejectionListener, setPinResolutionListener,
+  acceptPinOverride, listPinRejections,
+  type PinRejection,
 } from '../../services/mls/mlsGroupStore';
 import { toBase64 } from '../../services/cryptoHelpers';
 import { signRotationLink, signRotationHead, type AikLink, type AikHead } from '../../services/mls/aikRotation';
@@ -200,5 +203,146 @@ describe('mls trust store — rotation-attestation', () => {
     const rec = await getTrustRecord(u);
     expect(rec?.pinnedAik).toBe(b64(c.publicKey));
     expect(rec?.pinnedSeq).toBe(1);
+  });
+});
+
+describe('mls trust store — key-change acknowledgement', () => {
+  beforeEach(() => {
+    globalThis.indexedDB = new IDBFactory();
+    __testHooks.resetDbHandle();
+    __testHooks.resetRotationStateForTest();
+  });
+
+  it('records a DEFINITIVE rejection (chain fetched, verdict reject) and notifies once', async () => {
+    const u = randomUUID();
+    const p = kp(); const c = kp();
+    const seen: PinRejection[] = [];
+    setPinRejectionListener((e) => seen.push(e));
+    await pinOrVerifyAik(u, p.publicKey);
+    setRotationChainFetcher(fetcher({ chain: [], head: null })); // chain-less reset AIK
+    expect(await pinOrVerifyAik(u, c.publicKey)).toBe(false);
+    expect(await pinOrVerifyAik(u, c.publicKey)).toBe(false); // re-validation: no re-notify
+    expect(seen).toEqual([{ userId: u, candidateAik: b64(c.publicKey), pinnedAik: b64(p.publicKey), self: false }]);
+    const rec = await getTrustRecord(u);
+    expect(rec?.pinnedAik).toBe(b64(p.publicKey)); // still fail-closed
+    expect(rec?.rejectedAiks).toEqual([b64(c.publicKey)]); // persisted for UI hydration
+    expect(await listPinRejections()).toEqual(seen);
+  });
+
+  it('does NOT record a transient (offline, no fetcher) rejection', async () => {
+    const u = randomUUID();
+    const p = kp(); const c = kp();
+    const seen: PinRejection[] = [];
+    setPinRejectionListener((e) => seen.push(e));
+    await pinOrVerifyAik(u, p.publicKey);
+    expect(await pinOrVerifyAik(u, c.publicKey)).toBe(false); // no fetcher: transient fail-closed
+    expect(seen).toEqual([]);
+    expect((await getTrustRecord(u))?.rejectedAiks).toBeUndefined();
+  });
+
+  it('self-heals a stale self-pin to the OWN currently-held AIK (possession proof)', async () => {
+    const u = randomUUID();
+    const old = kp(); const mine = kp();
+    await pinOrVerifyAik(u, old.publicKey); // stale pre-reset self-pin
+    setOwnAikHint({ userId: u, aikB64: b64(mine.publicKey) });
+    expect(await pinOrVerifyAik(u, mine.publicKey)).toBe(true); // heals, no chain needed
+    const rec = await getTrustRecord(u);
+    expect(rec?.pinnedAik).toBe(b64(mine.publicKey));
+    // History TRUNCATES on a manual move: the superseded (possibly compromised) key
+    // must not stay backward-acceptable via the lagging path.
+    expect(rec?.aikHistory).toEqual([b64(mine.publicKey)]);
+    expect(rec?.rejectedAiks).toBeUndefined();
+  });
+
+  it('never self-heals BACKWARD to a superseded own key already in history (floor-reset attack)', async () => {
+    const u = randomUUID();
+    const a = kp(); const b = kp();
+    await pinOrVerifyAik(u, a.publicKey); // TOFU A
+    setRotationChainFetcher(fetcher({ chain: [mkLink(u, 1, a, b)], head: mkHead(u, 1, b) }));
+    expect(await pinOrVerifyAik(u, b.publicKey)).toBe(true); // attested advance: pin=B, seq=1, history=[A,B]
+    // Server rolls our vault back so this device's held AIK becomes A again.
+    setOwnAikHint({ userId: u, aikB64: b64(a.publicKey) });
+    // A is in history: accepted as LAGGING, but the pin and anti-rollback floor stay put.
+    expect(await pinOrVerifyAik(u, a.publicKey)).toBe(true);
+    const rec = await getTrustRecord(u);
+    expect(rec?.pinnedAik).toBe(b64(b.publicKey)); // NOT moved backward
+    expect(rec?.pinnedSeq).toBe(1); // floor intact
+  });
+
+  it('the self hint never admits a key we do not hold (anti-injection preserved)', async () => {
+    const u = randomUUID();
+    const mine = kp(); const attacker = kp();
+    await pinOrVerifyAik(u, mine.publicKey);
+    setOwnAikHint({ userId: u, aikB64: b64(mine.publicKey) });
+    setRotationChainFetcher(fetcher({ chain: [], head: null }));
+    expect(await pinOrVerifyAik(u, attacker.publicKey)).toBe(false);
+    expect((await getTrustRecord(u))?.pinnedAik).toBe(b64(mine.publicKey));
+    expect((await listPinRejections())[0]?.self).toBe(true); // flagged as a SELF alert
+  });
+
+  it('acceptPinOverride moves the pin ONLY to an observed-and-rejected candidate', async () => {
+    const u = randomUUID();
+    const p = kp(); const c = kp(); const never = kp();
+    await pinOrVerifyAik(u, p.publicKey);
+    setRotationChainFetcher(fetcher({ chain: [], head: null }));
+    await pinOrVerifyAik(u, c.publicKey); // records the rejection
+    expect(await acceptPinOverride(u, b64(never.publicKey))).toBe(false); // never observed
+    expect(await acceptPinOverride(u, b64(c.publicKey))).toBe(true);
+    const rec = await getTrustRecord(u);
+    expect(rec?.pinnedAik).toBe(b64(c.publicKey));
+    expect(rec?.aikHistory).toEqual([b64(c.publicKey)]); // TRUNCATED: continuity is severed by definition
+    expect(rec?.pinnedSeq).toBe(0); // genesis-like anti-rollback floor
+    expect(rec?.verified).toBe(false);
+    expect(rec?.rejectedAiks).toBeUndefined(); // cleared
+    expect(await listPinRejections()).toEqual([]);
+    // The accepted key now validates like any pinned key.
+    expect(await pinOrVerifyAik(u, c.publicKey)).toBe(true);
+    // The superseded key is NOT backward-acceptable: it re-surfaces as a fresh rejection.
+    expect(await pinOrVerifyAik(u, p.publicKey)).toBe(false);
+    expect((await getTrustRecord(u))?.rejectedAiks).toEqual([b64(p.publicKey)]);
+  });
+
+  it('notifies resolution when an attested advance or an accept clears pending rejections', async () => {
+    const u = randomUUID();
+    const p = kp(); const evil = kp(); const c = kp();
+    const resolved: string[] = [];
+    setPinResolutionListener((userId) => resolved.push(userId));
+    await pinOrVerifyAik(u, p.publicKey);
+    setRotationChainFetcher(fetcher({ chain: [], head: null }));
+    await pinOrVerifyAik(u, evil.publicKey); // rejection recorded
+    __testHooks.resetRotationStateForTest(); // bust the chain cache
+    setPinResolutionListener((userId) => resolved.push(userId));
+    setRotationChainFetcher(fetcher({ chain: [mkLink(u, 1, p, c)], head: mkHead(u, 1, c) }));
+    expect(await pinOrVerifyAik(u, c.publicKey)).toBe(true); // attested advance clears the rejection
+    expect(resolved).toEqual([u]);
+    // ...and an accept notifies too.
+    const u2 = randomUUID();
+    const p2 = kp(); const c2 = kp();
+    await pinOrVerifyAik(u2, p2.publicKey);
+    setRotationChainFetcher(fetcher({ chain: [], head: null }));
+    await pinOrVerifyAik(u2, c2.publicKey);
+    await acceptPinOverride(u2, b64(c2.publicKey));
+    expect(resolved).toEqual([u, u2]);
+  });
+
+  it('acceptPinOverride is idempotent when the candidate is already the pin', async () => {
+    const u = randomUUID();
+    const p = kp();
+    await pinOrVerifyAik(u, p.publicKey);
+    expect(await acceptPinOverride(u, b64(p.publicKey))).toBe(true);
+    expect((await getTrustRecord(u))?.pinnedAik).toBe(b64(p.publicKey));
+  });
+
+  it('an attested advance clears stale pending rejections', async () => {
+    const u = randomUUID();
+    const p = kp(); const evil = kp(); const c = kp();
+    await pinOrVerifyAik(u, p.publicKey);
+    setRotationChainFetcher(fetcher({ chain: [], head: null }));
+    await pinOrVerifyAik(u, evil.publicKey); // rejection recorded
+    __testHooks.resetRotationStateForTest(); // bust the 60s chain cache (still holds the empty chain)
+    setRotationChainFetcher(fetcher({ chain: [mkLink(u, 1, p, c)], head: mkHead(u, 1, c) }));
+    expect(await pinOrVerifyAik(u, c.publicKey)).toBe(true); // legitimate rotation lands
+    expect((await getTrustRecord(u))?.rejectedAiks).toBeUndefined();
+    expect(await listPinRejections()).toEqual([]);
   });
 });

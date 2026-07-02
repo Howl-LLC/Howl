@@ -2286,42 +2286,69 @@ const App: React.FC = () => {
         void import('./services/dmSearchIndex').then((m) => m.onUnlocked(currentUserId)).catch(() => undefined);
       }
     });
+    const onMlsReady = () => {
+      void runReload();
+      // Bring the upload syncer up and pull the cross-device archive (eager preview
+      // pass) once MLS is live. startHistorySync is idempotent for the same active
+      // user; drainHistoryNow flushes any unsynced local rows. The eager
+      // DOWN-restore is lease-gated, and navigator.locks grants the lease
+      // ASYNCHRONOUSLY — so it must run from the lease-acquired continuation, not
+      // synchronously here (lease not yet held). startHistorySync invokes the
+      // callback exactly when this tab holds the lease.
+      if (currentUserId) {
+        const uid = currentUserId;
+        startHistorySync(uid, () => {
+          void runEagerPreviewRestore(uid);
+          // Move-to-Private: finish any rotation interrupted by a crash/close.
+          // Lease-gated (this callback fires only on the lease-holding tab).
+          void dmKeyManager.resumePendingRotation(uid);
+        });
+        drainHistoryNow();
+      }
+      // An mls DM left open across unlock must establish once MLS is ready (the
+      // DM-load effect is keyed on the active channel, not readiness).
+      const activeId = useNavigationStore.getState().activeDmChannelId;
+      if (activeId) {
+        const activeDm = useDmStore.getState().dmChannels.find((ch) => ch.id === activeId);
+        maybeEstablishActiveMlsChannel(activeId, activeDm);
+      }
+      // Hydrate pending key-change alerts (persisted pin rejections) so the
+      // warn+accept banner survives a reload.
+      void mlsCoordinator.listKeyChangeAlerts().then((alerts) => {
+        for (const a of alerts) {
+          useUiStore.getState().setKeyChangeAlert(a.userId, { candidateAik: a.candidateAik, pinnedAik: a.pinnedAik, self: a.self });
+        }
+      }).catch(() => undefined);
+    };
     const offMls = mlsCoordinator.mlsEvents.on((e) => {
       // Drive the reactive indicator on BOTH transitions so the DM
       // composer's MLS-locked banner appears when a sibling tab (or a worker
       // crash) tears MLS down and clears again once it recovers. Consumers read
       // mlsCoordinator.isActive() synchronously, gated on this tick.
       useUiStore.getState().bumpMlsReadyTick();
-      if (e === 'mls-ready') {
-        void runReload();
-        // Bring the upload syncer up and pull the cross-device archive
-        // (eager preview pass) once MLS is live. startHistorySync is idempotent for
-        // the same active user; drainHistoryNow flushes any unsynced local rows. The
-        // eager DOWN-restore is lease-gated, and navigator.locks grants the lease
-        // ASYNCHRONOUSLY — so it must run from the lease-acquired continuation, not
-        // synchronously here (where the lease is not yet held). startHistorySync
-        // invokes the callback exactly when this tab holds the lease.
-        if (currentUserId) {
-          const uid = currentUserId;
-          startHistorySync(uid, () => {
-            void runEagerPreviewRestore(uid);
-            // Move-to-Private: finish any rotation interrupted by a crash/close.
-            // Lease-gated (this callback fires only on the lease-holding tab).
-            void dmKeyManager.resumePendingRotation(uid);
-          });
-          drainHistoryNow();
-        }
-        // An mls DM left open across unlock must establish once MLS is
-        // ready (the DM-load effect is keyed on the active channel, not readiness).
-        const activeId = useNavigationStore.getState().activeDmChannelId;
-        if (activeId) {
-          const activeDm = useDmStore.getState().dmChannels.find((ch) => ch.id === activeId);
-          maybeEstablishActiveMlsChannel(activeId, activeDm);
-        }
-      }
+      if (e === 'mls-ready') onMlsReady();
     });
+    // Already-ready at attach: on a reload with a warm SharedWorker + stored-credential
+    // auto-unlock, 'mls-ready' fires before this effect subscribes (the emitter is not
+    // latched), so key-change alert hydration — and the ready tick — must not depend on
+    // observing the event. Same already-ready-at-mount convention as useMlsHistoryRestore /
+    // useOtrSocketEvents; everything in onMlsReady is idempotent.
+    if (mlsCoordinator.isActive()) {
+      useUiStore.getState().bumpMlsReadyTick();
+      onMlsReady();
+    }
     const offApplyFailed = mlsCoordinator.onApplyFailed((e) => {
       useUiStore.getState().markChannelNeedsResync(e.dmChannelId);
+    });
+    // A definitive AIK pin rejection surfaces the per-user key-change alert
+    // (warn+accept banner in every DM shared with that user).
+    const offKeyChange = mlsCoordinator.onKeyChange((e) => {
+      useUiStore.getState().setKeyChangeAlert(e.userId, { candidateAik: e.candidateAik, pinnedAik: e.pinnedAik, self: e.self });
+    });
+    // ...and clear it when the rejection resolves out-of-band (attested rotation
+    // advance, self-heal, or an accept in another tab/realm) so the banner never sticks.
+    const offKeyChangeResolved = mlsCoordinator.onKeyChangeResolved((e) => {
+      useUiStore.getState().clearKeyChangeAlert(e.userId);
     });
     // Self-heal: a later good commit advances the epoch -> clear the resync hint.
     const offEpochClear = mlsCoordinator.onEpochChange((e) => {
@@ -2344,7 +2371,7 @@ const App: React.FC = () => {
       }, 300);
     });
     return () => {
-      offLegacy(); offSearchLock(); offMls(); offApplyFailed(); offEpochClear(); offReadyClear(); offHistoryPreviews();
+      offLegacy(); offSearchLock(); offMls(); offApplyFailed(); offKeyChange(); offKeyChangeResolved(); offEpochClear(); offReadyClear(); offHistoryPreviews();
       if (previewTimer) clearTimeout(previewTimer);
     };
   }, [currentUserId]);

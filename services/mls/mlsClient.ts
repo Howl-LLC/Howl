@@ -206,6 +206,21 @@ export function getAikChain(userId: string): Promise<{
   return apiClient.getAikChain(userId);
 }
 
+/** Fetch a peer's CURRENT account AIK (DmKeyBundle.signingPublicKey). The cheap,
+ *  non-destructive read the rejected-key negative cache checks before a consume. */
+export async function getPeerAik(userId: string): Promise<{ signingPublicKey: string | null }> {
+  const res = await apiClient.getDmKeysPublicKey(userId);
+  return { signingPublicKey: res.signingPublicKey ?? null };
+}
+
+/** Manual teardown of a stranded 1:1 group (epoch-bound; see routes/mls.ts reset). */
+export function resetGroup(groupId: string, expectedEpoch: string): Promise<{ success: boolean }> {
+  return apiClient.request<{ success: boolean }>(`/mls/groups/${groupId}/reset`, {
+    method: 'POST',
+    body: JSON.stringify({ expectedEpoch }),
+  });
+}
+
 // Socket subscriptions
 // Both are notify-style. onSocketCreated bridges the connect()->listeners gap so
 // a subscription registered before the socket exists still binds (mirrors the
@@ -233,5 +248,16 @@ export function onMlsWelcome(cb: (e: { groupId: string; epoch: string }) => void
   return () => {
     removeCreated();
     socketService.socket?.off('mls-welcome', handler);
+  };
+}
+
+export function onMlsGroupReset(cb: (e: { dmChannelId: string; mlsGroupId: string }) => void): () => void {
+  const handler = (e: { dmChannelId: string; mlsGroupId: string }) => cb(e);
+  const removeCreated = socketService.onSocketCreated(() => {
+    socketService.socket?.on('mls-group-reset', handler);
+  });
+  return () => {
+    removeCreated();
+    socketService.socket?.off('mls-group-reset', handler);
   };
 }

@@ -3,8 +3,9 @@
 // scripts/check-schema-compat.ts
 // CI compat gate. Fails the build (or warns when COMPAT_BREAK_APPROVED=true)
 // on any of these violations:
-// 1. .strict() reintroduced on socket schemas (signedVoiceJoinBlob is the
-//    sole allowlisted exception).
+// 1. .strict() reintroduced on socket schemas (signedVoiceJoinBlob and
+//    stageHostBlob — the nested signed blobs whose signatures cover the exact
+//    field set — are the sole allowlisted exceptions).
 // 2. shared/protocol.ts and backend/src/protocol.ts drifted below their
 //    AUTO-SYNCED headers.
 // 3. A newly-added Prisma migration contains destructive changes
@@ -237,7 +238,7 @@ function main(): void {
     const schemaLines = schemaText.split('\n');
     const allowedStrictLineNumbers = new Set<number>();
     for (let i = 0; i < schemaLines.length; i++) {
-      if (/signedVoiceJoinBlob\s*=\s*z\.object\(/.test(schemaLines[i])) {
+      if (/(?:signedVoiceJoinBlob|stageHostBlob)\s*=\s*z\.object\(/.test(schemaLines[i])) {
         for (let j = i; j < Math.min(schemaLines.length, i + 20); j++) {
           if (/\.strict\(\)/.test(schemaLines[j])) {
             allowedStrictLineNumbers.add(j + 1);

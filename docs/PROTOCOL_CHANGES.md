@@ -856,6 +856,20 @@ orderings agree, `electVoiceLeader` returns the same member as the old
 `participants[0]`). `scripts/check-schema-compat.ts` is not triggered (no watched
 schema path changed) and passes; `fixtures.test.ts` untouched.
 
+## 2026-07-02 — stage host attestation
+
+Additive. `stageE2eeDistributePayload` gains OPTIONAL `hostBlob` + `hostSignature`
+fields (the payload stays `.passthrough()`, so pre-change servers already relayed the
+fields verbatim and old clients simply omit/ignore them). `hostBlob` is the new
+nested `stageHostBlob` — a signed host attestation the audience verifies
+client-side against the host's pinned AIK, closing the stage key-delivery MITM
+(mirrors the voice join-blob design). The blob itself is `.strict()` ON PURPOSE:
+extra fields would change what the host's signature covers; evolve it by bumping
+its `v` literal. `scripts/check-schema-compat.ts` allowlists it alongside
+`signedVoiceJoinBlob` for the same reason. No `protocolVersion` bump; the voice
+side (pin peer signing keys, verified leader wrap key) is client-only and has no
+wire impact.
+
 ## 2026-07-01 — key-change acknowledge: `dm-encryption-reset` push + reset hygiene
 
 Additive. One NEW server → client event, a client listener for the EXISTING

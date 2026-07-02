@@ -789,7 +789,7 @@ function FeaturesSection() {
       visual: (
         <div style={{ position: 'relative' }}>
           <EncryptionStackVisual />
-          <LockedSticker src={asset('roo-lock-key.webp')} alt="Lock & Key Roo" desktop={{ x: 315, y: 89, w: 432, rot: -4 }} mobile={{ x: 18, y: 376, w: 396, rot: -4 }} aspect={2048 / 2732} />
+          <LockedSticker src={asset('roo-lock-key.gif')} alt="Lock & Key Roo" desktop={{ x: 315, y: 89, w: 432, rot: -4 }} mobile={{ x: 18, y: 376, w: 396, rot: -4 }} aspect={2048 / 2732} />
         </div>
       ),
     },
@@ -811,7 +811,7 @@ function FeaturesSection() {
       visual: (
         <div style={{ position: 'relative' }}>
           <SingleScreenshot name="server-calendar" alt="Howl Server Calendar" tilt="rotateY(-10deg) rotateX(2deg)" origin="left center" />
-          <LockedSticker src={asset('roo-megaphone.webp')} alt="Megaphone Roo" desktop={{ x: -493, y: 149, w: 343, rot: -6 }} mobile={{ x: 90, y: -260, w: 371, rot: -6 }} aspect={2048 / 2732} />
+          <LockedSticker src={asset('roo-megaphone.gif')} alt="Megaphone Roo" desktop={{ x: -493, y: 149, w: 343, rot: -6 }} mobile={{ x: 90, y: -260, w: 371, rot: -6 }} aspect={2048 / 2732} />
         </div>
       ),
     },
@@ -842,7 +842,7 @@ function FeaturesSection() {
             { name: 'safety', alt: 'Howl Safety' },
             { name: 'auto-filter', alt: 'Howl Auto Filter' },
           ]} tilt="rotateY(-8deg) rotateX(3deg)" />
-          <LockedSticker src={asset('roo-reading-transparent.webp')} alt="Reading Roo" desktop={{ x: -242, y: 40, w: 89, rot: 0 }} mobile={{ x: 79, y: -82, w: 80, rot: 0 }} aspect={634 / 551} />
+          <LockedSticker src={asset('roo-reading-transparent.gif')} alt="Reading Roo" desktop={{ x: -242, y: 40, w: 89, rot: 0 }} mobile={{ x: 79, y: -82, w: 80, rot: 0 }} aspect={634 / 551} />
         </div>
       ),
     },

@@ -1,0 +1,17 @@
+{
+  "name": "howl-marketing-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/fetch-fonts.mjs",
+    "dev": "astro dev",
+    "prebuild": "node scripts/fetch-fonts.mjs",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.4.1",
+    "astro": "^5.12.0"
+  }
+}

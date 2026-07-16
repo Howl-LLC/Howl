@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.astro/
+
+# Fetched at build time by scripts/fetch-fonts.mjs (ITF Free Font License —
+# unclear redistribution terms, so never committed; same policy as the app).
+public/fonts/

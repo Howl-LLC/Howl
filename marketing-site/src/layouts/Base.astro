@@ -1,0 +1,137 @@
+---
+import '../styles/global.css'
+import { SITE_URL, APP_URL, SITE_NAME, OG_IMAGE, NAV_LINKS, COMPARE_LINKS, REPO_URL } from '../config'
+
+interface Props {
+  title: string
+  description: string
+  /** Path beginning with "/", e.g. "/compare/discord". "/" for home. */
+  path: string
+  ogType?: 'website' | 'article'
+  /** Keep the page out of search indexes (error pages). */
+  noindex?: boolean
+  /** Extra JSON-LD blocks to emit alongside the site-wide ones. */
+  jsonLd?: object[]
+}
+
+const { title, description, path, ogType = 'website', noindex = false, jsonLd = [] } = Astro.props
+const canonical = path === '/' ? `${SITE_URL}/` : `${SITE_URL}${path}`
+
+// Legal pages are served by the app (see LandingPage.tsx Footer — same routes).
+const legalLinks = [
+  { href: `${APP_URL}/about`, label: 'About' },
+  { href: `${APP_URL}/terms-of-service`, label: 'Terms' },
+  { href: `${APP_URL}/privacy-policy`, label: 'Privacy' },
+  { href: `${APP_URL}/community-guidelines`, label: 'Community' },
+  { href: `${APP_URL}/dmca-policy`, label: 'DMCA' },
+  { href: `${APP_URL}/refund-policy`, label: 'Refunds' },
+  { href: `${APP_URL}/law-enforcement`, label: 'Law Enforcement' },
+  { href: `${APP_URL}/accessibility`, label: 'Accessibility' },
+]
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/png" href="/howl-logo.png" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link
+      rel="preload"
+      href="/fonts/clash-display/ClashDisplay-Semibold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/satoshi/Satoshi-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={OG_IMAGE} />
+
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={OG_IMAGE} />
+
+    {jsonLd.map((block) => (
+      <script type="application/ld+json" set:html={JSON.stringify(block)} />
+    ))}
+  </head>
+  <body>
+    <header class="site" id="site-header">
+      <a class="brand" href="/">
+        <img src="/howl-logo-v4.png" alt="" width="36" height="36" />
+        {SITE_NAME}
+      </a>
+      <nav>
+        {NAV_LINKS.map((link) => <a href={link.href}>{link.label}</a>)}
+        <a class="cta" href={APP_URL}>Open Howl</a>
+      </nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site">
+      <div class="columns">
+        <div>
+          <h2>Compare</h2>
+          <ul>
+            {COMPARE_LINKS.map((link) => (
+              <li><a href={link.href}>{link.label}</a></li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h2>Howl</h2>
+          <ul>
+            <li><a href="/security">Security and encryption</a></li>
+            <li><a href="/docs/migrate-from-discord">Move from Discord</a></li>
+            <li><a href="/pricing">Pricing</a></li>
+            <li><a href={REPO_URL}>Source code (GitHub)</a></li>
+            <li><a href={APP_URL}>Open the app</a></li>
+          </ul>
+        </div>
+      </div>
+      <p class="fine-print">
+        <strong>No crypto, no tokens, no coins.</strong>
+        Howl is a messaging app and is not affiliated with, does not issue, and
+        does not endorse any cryptocurrency, token, coin, NFT, memecoin, ICO,
+        airdrop, or related digital asset. Any wallet, ticker, contract, or
+        exchange listing claiming a Howl connection is not us. We do not
+        solicit investment, run a presale, or distribute crypto rewards.
+      </p>
+      <div class="bottom-row">
+        <span class="copyright">
+          © {new Date().getFullYear()} Howl LLC. Built with care, not surveillance.
+        </span>
+        <div class="legal-links">
+          {legalLinks.map((link) => <a href={link.href}>{link.label}</a>)}
+        </div>
+      </div>
+    </footer>
+    <script>
+      // Landing-nav parity: transparent bar at the top, veil blur once scrolled.
+      const header = document.getElementById('site-header')
+      const update = () => {
+        if (window.scrollY > 40) header?.setAttribute('data-scrolled', '')
+        else header?.removeAttribute('data-scrolled')
+      }
+      update()
+      window.addEventListener('scroll', update, { passive: true })
+    </script>
+  </body>
+</html>

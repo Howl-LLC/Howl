@@ -1,0 +1,74 @@
+---
+import { getEntry, render } from 'astro:content'
+import Base from '../layouts/Base.astro'
+import { extractFaq } from '../lib/faq'
+import { SITE_URL } from '../config'
+
+interface Props {
+  /** Content entry id = frontmatter `slug` in docs/marketing/ (the glob loader uses slug as the id when present). */
+  entryId: string
+  /** Canonical path for this page, e.g. "/compare/discord". */
+  path: string
+  ogType?: 'website' | 'article'
+  /** Emit BreadcrumbList JSON-LD (used on /docs/* pages). */
+  breadcrumbs?: { name: string; path: string }[]
+}
+
+const { entryId, path, ogType = 'article', breadcrumbs } = Astro.props
+
+const entry = await getEntry('marketing', entryId)
+if (!entry) {
+  throw new Error(`Marketing content entry not found: ${entryId}`)
+}
+const { Content } = await render(entry)
+
+const jsonLd: object[] = []
+
+const faq = extractFaq(entry.body ?? '')
+if (faq.length > 0) {
+  jsonLd.push({
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({
+      '@type': 'Question',
+      name: item.question,
+      acceptedAnswer: { '@type': 'Answer', text: item.answer },
+    })),
+  })
+}
+
+if (ogType === 'article') {
+  jsonLd.push({
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: entry.data.title,
+    description: entry.data.description,
+    dateModified: entry.data.lastVerified.toISOString().slice(0, 10),
+    mainEntityOfPage: `${SITE_URL}${path}`,
+    author: { '@type': 'Organization', name: 'Howl', url: `${SITE_URL}/` },
+  })
+}
+
+if (breadcrumbs) {
+  jsonLd.push({
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: breadcrumbs.map((crumb, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: crumb.name,
+      item: `${SITE_URL}${crumb.path}`,
+    })),
+  })
+}
+---
+
+<Base
+  title={entry.data.title}
+  description={entry.data.description}
+  path={path}
+  ogType={ogType}
+  jsonLd={jsonLd}
+>
+  <Content />
+</Base>

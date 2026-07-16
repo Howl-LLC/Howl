@@ -1,0 +1,137 @@
+---
+import Base from '../layouts/Base.astro'
+import { SITE_URL, APP_URL } from '../config'
+
+// Home copy mirrors the app landing page's positioning; the seven content
+// pages under docs/marketing/ are the copy source for everything else.
+
+const jsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    '@id': `${SITE_URL}/#org`,
+    name: 'Howl',
+    url: `${SITE_URL}/`,
+    logo: `${SITE_URL}/howl-logo.png`,
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Howl',
+    applicationCategory: 'CommunicationApplication',
+    operatingSystem: 'Web, Windows, macOS, Linux',
+    url: APP_URL,
+    description:
+      'Open-source, self-hostable Discord alternative with end-to-end encrypted DMs and calls: servers, voice channels, video, and screen sharing.',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    publisher: { '@id': `${SITE_URL}/#org` },
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Howl',
+    url: `${SITE_URL}/`,
+    publisher: { '@id': `${SITE_URL}/#org` },
+  },
+]
+---
+
+<Base
+  title="Howl: Private Discord Alternative | E2E Encrypted Chat"
+  description="Open-source, self-hostable Discord alternative with end-to-end encrypted DMs and calls. Servers, voice channels, video, and screen share, free."
+  path="/"
+  jsonLd={jsonLd}
+>
+  <section class="hero">
+    <h1>The private Discord alternative</h1>
+    <p class="lede">
+      Everything your community needs (servers, voice, video, screen share)
+      with end-to-end encrypted DMs and calls. Open source, and self-hostable
+      with Docker. Your conversations are nobody's product.
+    </p>
+    <div class="actions">
+      <a class="button primary" href={APP_URL}>Get started free</a>
+      <a class="button secondary" href="/security">How the encryption works</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>What's end-to-end encrypted</h2>
+    <p>
+      Your direct messages, group DMs, DM file attachments, and every voice,
+      video, and stage call. DMs use MLS (RFC 9420), a modern open encryption
+      standard, with post-quantum protection layered in. If a DM call can't be
+      encrypted, it doesn't connect at all: you see a red shield instead of a
+      call that gave up its privacy.
+    </p>
+    <p>
+      Server text channels are encrypted in transit and at rest but not
+      end-to-end, so moderation, search, and backups work. The full boundary,
+      including account recovery, is on the
+      <a href="/security">security page</a>.
+    </p>
+  </section>
+
+  <section>
+    <h2>What you get</h2>
+    <ul class="card-grid">
+      <li>
+        <strong>Voice, video, and stages</strong>
+        <span>
+          Always-on voice channels, stages with host and speaker roles, and
+          screen share. Every call is an encrypted call, including voice
+          channels on public servers.
+        </span>
+      </li>
+      <li>
+        <strong>The full community toolkit</strong>
+        <span>
+          Servers with channels and roles, threads, forums, polls, events and
+          calendar, themes, and a desktop app for Windows, macOS, and Linux.
+        </span>
+      </li>
+      <li>
+        <strong>Discord import</strong>
+        <span>
+          Bring your channel history with you. The
+          <a href="/docs/migrate-from-discord">migration guide</a> walks
+          through it step by step.
+        </span>
+      </li>
+      <li>
+        <strong>Self-hosting</strong>
+        <span>
+          Run your own instance with Docker. Every Pro feature unlocks free,
+          with no phone-home.
+        </span>
+      </li>
+      <li>
+        <strong>Open source</strong>
+        <span>
+          The whole platform is AGPL-3.0, so you can read the crypto code
+          instead of taking this page's word for it.
+        </span>
+      </li>
+      <li>
+        <strong>No ads, no data sales</strong>
+        <span>
+          Revenue is subscriptions and donations. The business model is part
+          of the privacy story.
+        </span>
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Comparing your options?</h2>
+    <p>
+      We keep detailed, date-stamped comparisons with
+      <a href="/compare/discord">Discord</a>,
+      <a href="/compare/fluxer">Fluxer</a>,
+      <a href="/compare/stoat">Stoat</a>, and
+      <a href="/compare/matrix">Matrix/Element</a>, plus a roundup of
+      <a href="/blog/self-hosted-discord-alternatives">self-hosted Discord alternatives</a>
+      that includes the competition fairly.
+    </p>
+  </section>
+</Base>

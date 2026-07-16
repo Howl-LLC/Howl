@@ -1,0 +1,105 @@
+---
+import Base from '../layouts/Base.astro'
+import { APP_URL } from '../config'
+
+// Plan names, prices, and feature lists mirror the landing page's
+// PricingSection (components/LandingPage.tsx) verbatim — that section is the
+// product's pricing source of truth. If prices change there, change them here
+// in the same PR.
+const plans = [
+  {
+    name: 'Free',
+    price: '$0',
+    sub: 'forever',
+    features: [
+      '50MB uploads',
+      '720p 30fps webcam',
+      '1080p 30fps screen share',
+      'Voice bitrate 96 kbps',
+      '2 showcase cards',
+      'Banner color only',
+    ],
+    cta: 'Get Started',
+    featured: false,
+  },
+  {
+    name: 'Pro Essential',
+    price: '$4.99',
+    sub: '/mo',
+    features: [
+      '100MB uploads',
+      'Up to 1080p 30fps webcam',
+      '1080p 60fps screen share',
+      'Voice bitrate 128 kbps',
+      '4 showcase cards',
+      'Banner image upload',
+    ],
+    cta: 'Subscribe',
+    featured: false,
+  },
+  {
+    name: 'Howl Pro',
+    price: '$8.99',
+    sub: '/mo',
+    features: [
+      '500MB uploads',
+      'Up to 1440p 30fps webcam',
+      '1440p 60fps screen share',
+      'Voice bitrate 384 kbps',
+      'Up to 12 showcase cards',
+      'Hero showcase card (3×2)',
+      'Animated GIF banner & backgrounds',
+      'Profile & name effects',
+      'Custom name color & font',
+      'Colored chat text',
+    ],
+    cta: 'Go Pro',
+    featured: true,
+  },
+]
+---
+
+<Base
+  title="Howl Pricing: Free, Pro Essential, and Howl Pro"
+  description="Howl is free to use, funded by subscriptions and donations. Pro tiers add extras, and self-hosting unlocks every Pro feature at no cost."
+  path="/pricing"
+>
+  <span class="eyebrow">Pricing</span>
+  <h1>Simple pricing, nothing essential paywalled</h1>
+  <p>
+    Howl runs on subscriptions and donations, not ads and not your data. No
+    genuine features are paywalled: the paid tiers add extras like
+    higher-resolution screen sharing and more customization.
+  </p>
+
+  <div class="plan-grid">
+    {plans.map((plan) => (
+      <div class={plan.featured ? 'card featured' : 'card'}>
+        {plan.featured && <span class="plan-badge">Most Popular</span>}
+        <span class="plan-name">{plan.name}</span>
+        <div class="plan-price">
+          <span class="amount">{plan.price}</span>
+          <span class="period">{plan.sub}</span>
+        </div>
+        <ul class="check-list">
+          {plan.features.map((feature) => <li>{feature}</li>)}
+        </ul>
+        <div style="margin-top: 24px;">
+          <a
+            class={plan.featured ? 'button primary' : 'button secondary'}
+            href={APP_URL}
+            style="width: 100%;"
+          >
+            {plan.cta}
+          </a>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <p>
+    Self-hosting your own instance unlocks every Pro feature free, with no
+    phone-home; see the <a href="/security">security page</a> for what
+    self-hosting changes.
+  </p>
+</Base>

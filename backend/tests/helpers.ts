@@ -105,6 +105,7 @@ export async function createTestServer(ownerId: string, name?: string) {
   const server = await prisma.server.create({
     data: {
       name: name ?? `Test Server ${Date.now()}`,
+      ownerId, // authoritative owner, mirrors production server creation
       members: { create: { userId: ownerId, role: 'owner' } },
       categories: { create: { name: 'General', position: 0 } },
     },

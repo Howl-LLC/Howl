@@ -15,13 +15,16 @@
  */
 
 import express, { Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { createRateLimitStore, RATE_LIMIT_DEFAULTS } from '../rateLimitStore.js';
+import { getClientIp } from '../utils/clientIp.js';
 import { getParam } from '../utils.js';
 import { powerUpTier } from './serverHelpers.js';
-import { hasPermission, loadPermissionContext, canSeeHiddenRoles } from '../utils/permissions.js';
+import { hasPermission, loadPermissionContext, canSeeHiddenRoles, roleCarriesElevatedGrants } from '../utils/permissions.js';
 import { prisma } from '../db.js';
 import { redis, invalidatePermissionContext } from '../redis.js';
 import {
@@ -45,6 +48,20 @@ import type { Server as IoServer } from 'socket.io';
 
 const log = logger.child({ module: 'rolePickers' });
 const router = express.Router({ mergeParams: true });
+
+// Dedicated rate limiter for mutating picker routes, matching the mutation
+// limiter the rest of the roles subsystem applies. Placed after
+// authenticateToken in each mutating route's chain so it keys by userId
+// (IP only for unauthenticated rejects).
+const pickerMutationLimiter = rateLimit({ ...RATE_LIMIT_DEFAULTS,
+  store: createRateLimitStore('rl:picker-mutate:'),
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Too many requests. Please wait a moment.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req as AuthRequest).userId ?? getClientIp(req) ?? 'anonymous',
+});
 
 // Per-(user, entry) claim mutex
 // Prevents a fast double-click from creating two grants. Redis-first; in-memory
@@ -421,7 +438,7 @@ router.get('/:pickerId', authenticateToken, validateUuidParams('serverId', 'pick
 }));
 
 // PATCH /role-pickers/:pickerId — update hero
-router.patch('/:pickerId', authenticateToken, validateUuidParams('serverId', 'pickerId'),
+router.patch('/:pickerId', authenticateToken, pickerMutationLimiter, validateUuidParams('serverId', 'pickerId'),
   validate(updateRolePickerSchema),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const serverId = getParam(req, 'serverId');
@@ -454,7 +471,7 @@ router.patch('/:pickerId', authenticateToken, validateUuidParams('serverId', 'pi
 );
 
 // POST /role-pickers/:pickerId/categories — create category
-router.post('/:pickerId/categories', authenticateToken, validateUuidParams('serverId', 'pickerId'),
+router.post('/:pickerId/categories', authenticateToken, pickerMutationLimiter, validateUuidParams('serverId', 'pickerId'),
   validate(createPickerCategorySchema),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const serverId = getParam(req, 'serverId');
@@ -481,7 +498,7 @@ router.post('/:pickerId/categories', authenticateToken, validateUuidParams('serv
 );
 
 // PATCH /role-pickers/:pickerId/categories/:catId — update category
-router.patch('/:pickerId/categories/:catId', authenticateToken,
+router.patch('/:pickerId/categories/:catId', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'catId'),
   validate(updatePickerCategorySchema),
   asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -536,7 +553,7 @@ router.patch('/:pickerId/categories/:catId', authenticateToken,
 );
 
 // DELETE /role-pickers/:pickerId/categories/:catId
-router.delete('/:pickerId/categories/:catId', authenticateToken,
+router.delete('/:pickerId/categories/:catId', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'catId'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const serverId = getParam(req, 'serverId');
@@ -557,7 +574,7 @@ router.delete('/:pickerId/categories/:catId', authenticateToken,
 );
 
 // POST /role-pickers/:pickerId/categories/:catId/entries — add entry
-router.post('/:pickerId/categories/:catId/entries', authenticateToken,
+router.post('/:pickerId/categories/:catId/entries', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'catId'),
   validate(createPickerEntrySchema),
   asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -577,6 +594,12 @@ router.post('/:pickerId/categories/:catId/entries', authenticateToken,
     if (!role.selfAssignable) return res.status(400).json({ error: 'Role is not marked self-assignable' });
     if (role.locked) return res.status(400).json({ error: 'Locked roles cannot be in a picker' });
     if (role.isEveryone) return res.status(400).json({ error: '@everyone cannot be in a picker' });
+    // Backstop the self-assign invariant at every grant-surface entry point:
+    // a role that carries moderation/management power (base perms or a
+    // channel/category override) must never be reachable through the picker.
+    if (await roleCarriesElevatedGrants(role.id, role.permissions)) {
+      return res.status(400).json({ error: 'A role with moderation or management permissions cannot be in a picker' });
+    }
 
     const cat = await prisma.rolePickerCategory.findFirst({
       where: { id: catId, pickerId, picker: { serverId } },
@@ -613,7 +636,7 @@ router.post('/:pickerId/categories/:catId/entries', authenticateToken,
 );
 
 // PATCH /role-pickers/:pickerId/entries/:entryId
-router.patch('/:pickerId/entries/:entryId', authenticateToken,
+router.patch('/:pickerId/entries/:entryId', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'entryId'),
   validate(updatePickerEntrySchema),
   asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -643,7 +666,7 @@ router.patch('/:pickerId/entries/:entryId', authenticateToken,
 );
 
 // PATCH /role-pickers/:pickerId/entries/:entryId/move
-router.patch('/:pickerId/entries/:entryId/move', authenticateToken,
+router.patch('/:pickerId/entries/:entryId/move', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'entryId'),
   validate(movePickerEntrySchema),
   asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -697,7 +720,7 @@ router.patch('/:pickerId/entries/:entryId/move', authenticateToken,
 );
 
 // DELETE /role-pickers/:pickerId/entries/:entryId
-router.delete('/:pickerId/entries/:entryId', authenticateToken,
+router.delete('/:pickerId/entries/:entryId', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'entryId'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const serverId = getParam(req, 'serverId');
@@ -735,7 +758,7 @@ router.delete('/:pickerId/entries/:entryId', authenticateToken,
 );
 
 // POST /role-pickers/:pickerId/entries/:entryId/claim — self-claim
-router.post('/:pickerId/entries/:entryId/claim', authenticateToken,
+router.post('/:pickerId/entries/:entryId/claim', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'entryId'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const serverId = getParam(req, 'serverId');
@@ -763,6 +786,11 @@ router.post('/:pickerId/entries/:entryId/claim', authenticateToken,
       if (!entry) return res.status(404).json({ error: 'Entry not found' });
       if (!entry.role.selfAssignable) return res.status(400).json({ error: 'Role is not self-assignable' });
       if (entry.role.locked) return res.status(400).json({ error: 'Locked roles cannot be claimed' });
+      // Backstop at claim time: entries created before a role gained elevated
+      // perms (or an elevated channel/category override) must not grant them.
+      if (await roleCarriesElevatedGrants(entry.roleId, entry.role.permissions)) {
+        return res.status(400).json({ error: 'This role can no longer be self-assigned' });
+      }
 
       // Already held? Idempotent.
       const existing = await prisma.memberRole.findUnique({
@@ -863,7 +891,7 @@ router.post('/:pickerId/entries/:entryId/claim', authenticateToken,
 );
 
 // DELETE /role-pickers/:pickerId/entries/:entryId/claim — release
-router.delete('/:pickerId/entries/:entryId/claim', authenticateToken,
+router.delete('/:pickerId/entries/:entryId/claim', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'entryId'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const serverId = getParam(req, 'serverId');
@@ -906,7 +934,7 @@ router.delete('/:pickerId/entries/:entryId/claim', authenticateToken,
 );
 
 // POST /role-pickers/:pickerId/entries/:entryId/request — manual approval
-router.post('/:pickerId/entries/:entryId/request', authenticateToken,
+router.post('/:pickerId/entries/:entryId/request', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'entryId'),
   validate(submitClaimRequestSchema),
   asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -954,7 +982,7 @@ router.post('/:pickerId/entries/:entryId/request', authenticateToken,
 );
 
 // DELETE /role-pickers/:pickerId/requests/me/:requestId — withdraw
-router.delete('/:pickerId/requests/me/:requestId', authenticateToken,
+router.delete('/:pickerId/requests/me/:requestId', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'pickerId', 'requestId'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const serverId = getParam(req, 'serverId');
@@ -1031,7 +1059,7 @@ router.get('/requests/list', authenticateToken, validateUuidParams('serverId'),
 );
 
 // PATCH /role-pickers/requests/:requestId/decide — approve / reject
-router.patch('/requests/:requestId/decide', authenticateToken,
+router.patch('/requests/:requestId/decide', authenticateToken, pickerMutationLimiter,
   validateUuidParams('serverId', 'requestId'),
   validate(decideClaimRequestSchema),
   asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -1056,6 +1084,11 @@ router.patch('/requests/:requestId/decide', authenticateToken,
       const role = r.entry.role;
       if (!role.selfAssignable) {
         return res.status(400).json({ error: 'Role is no longer self-assignable' });
+      }
+      // Same claim-time backstop as the instant-claim path: the role may have
+      // gained elevated perms after the request was queued.
+      if (await roleCarriesElevatedGrants(role.id, role.permissions)) {
+        return res.status(400).json({ error: 'This role can no longer be self-assigned' });
       }
       const applicantRestricted = await prisma.serverRole.findFirst({
         where: { serverId: r.serverId, blocksSelfRoles: true, memberRoles: { some: { userId: r.userId, serverId: r.serverId } } },

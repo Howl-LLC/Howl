@@ -10,6 +10,7 @@ import { validate } from '../middleware/validate.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import { channelPermissionOverrideSchema, categoryPermissionOverrideSchema } from '../schemas.js';
 import { getParam, hasPermission, loadPermissionContext, effectivePosition, unionPerms } from '../utils.js';
+import { hasElevatedPerms } from '../utils/permissions.js';
 import { logger } from '../logger.js';
 import { getClientIp } from '../utils/clientIp.js';
 
@@ -76,7 +77,7 @@ router.put('/:serverId/channels/:channelId/permissions', validateUuidParams('ser
 
   const { targetType, targetId, permissions } = req.body as { targetType: string; targetId: string; permissions: Record<string, boolean | null> };
 
-  const isOwner = ctx.member.role?.toLowerCase() === 'owner';
+  const isOwner = ctx.isOwner === true;
   const actorPosition = effectivePosition(ctx);
 
   // Validate target exists + role hierarchy check
@@ -89,6 +90,12 @@ router.put('/:serverId/channels/:channelId/permissions', validateUuidParams('ser
           return res.status(403).json({ error: 'Cannot set overrides for roles at or above your position' });
         }
       }
+      // A self-assignable role must stay cosmetic: block overrides that grant
+      // it moderation/management permissions (the self-assign and picker grant
+      // paths enforce the same invariant from the other side).
+      if (role.selfAssignable && hasElevatedPerms(permissions)) {
+        return res.status(400).json({ error: 'A self-assignable role cannot be granted moderation or management permissions' });
+      }
     }
     // 'everyone' = virtual @everyone role — no DB lookup needed, always allowed
   } else {
@@ -99,7 +106,7 @@ router.put('/:serverId/channels/:channelId/permissions', validateUuidParams('ser
     // targeting higher-ranked members (including admins) and e.g. deny them
     // viewChannels on a channel they would otherwise have access to.
     if (!isOwner) {
-      if (targetCtx.member.role?.toLowerCase() === 'owner') {
+      if (targetCtx.isOwner === true) {
         return res.status(403).json({ error: 'Cannot set overrides for the server owner' });
       }
       const targetPosition = effectivePosition(targetCtx);
@@ -189,7 +196,7 @@ router.put('/:serverId/categories/:categoryId/permissions', validateUuidParams('
 
   const { targetType, targetId, permissions } = req.body as { targetType: string; targetId: string; permissions: Record<string, boolean | null> };
 
-  const isOwner = ctx.member.role?.toLowerCase() === 'owner';
+  const isOwner = ctx.isOwner === true;
   const actorPosition = effectivePosition(ctx);
 
   // Validate target exists + role hierarchy check
@@ -202,6 +209,12 @@ router.put('/:serverId/categories/:categoryId/permissions', validateUuidParams('
           return res.status(403).json({ error: 'Cannot set overrides for roles at or above your position' });
         }
       }
+      // A self-assignable role must stay cosmetic: block overrides that grant
+      // it moderation/management permissions (the self-assign and picker grant
+      // paths enforce the same invariant from the other side).
+      if (role.selfAssignable && hasElevatedPerms(permissions)) {
+        return res.status(400).json({ error: 'A self-assignable role cannot be granted moderation or management permissions' });
+      }
     }
     // 'everyone' = virtual @everyone role — no DB lookup needed, always allowed
   } else {
@@ -209,7 +222,7 @@ router.put('/:serverId/categories/:categoryId/permissions', validateUuidParams('
     if (!targetCtx) return res.status(400).json({ error: 'User is not a member of this server' });
     // Category variant: same role-hierarchy check on the member-target branch.
     if (!isOwner) {
-      if (targetCtx.member.role?.toLowerCase() === 'owner') {
+      if (targetCtx.isOwner === true) {
         return res.status(403).json({ error: 'Cannot set overrides for the server owner' });
       }
       const targetPosition = effectivePosition(targetCtx);

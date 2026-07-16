@@ -451,6 +451,7 @@ router.post('/', authenticateToken, serverCreateIpLimiter, serverCreateLimiter, 
       data: {
         name: serverName,
         icon: iconVal,
+        ownerId: req.userId!,
         members: { create: { userId: req.userId!, role: 'owner' } },
       },
     });
@@ -590,6 +591,7 @@ router.post('/from-template', authenticateToken, serverCreateLimiter, serverMuta
       data: {
         name: serverName,
         icon: iconVal,
+        ownerId: req.userId!,
         members: { create: { userId: req.userId!, role: 'owner' } },
       },
     });
@@ -764,7 +766,11 @@ router.post('/:serverId/leave', validateUuidParams('serverId'), authenticateToke
     select: { userId: true, role: true },
   });
   if (!member) return res.status(403).json({ error: 'Not a member of this server' });
-  if (member.role?.toLowerCase() === 'owner') {
+  const leaveServer = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
+  const isLeavingOwner = leaveServer?.ownerId != null
+    ? leaveServer.ownerId === req.userId
+    : member.role?.toLowerCase() === 'owner';
+  if (isLeavingOwner) {
     return res.status(400).json({ error: 'Owner cannot leave; transfer ownership first' });
   }
   await prisma.serverMember.delete({
@@ -815,12 +821,24 @@ router.post('/:serverId/transfer-ownership', validateUuidParams('serverId'), aut
   if (!req.userId) return res.status(401).json({ error: 'Missing user' });
   const serverId = getParam(req, 'serverId');
   const { newOwnerId } = req.body as { newOwnerId?: string };
-  const currentMember = await prisma.serverMember.findUnique({
-    where: { userId_serverId: { userId: req.userId, serverId } },
-    select: { userId: true, role: true },
+  // Owner-ness is the authoritative Server.ownerId, not the role string.
+  const server = await prisma.server.findUnique({
+    where: { id: serverId },
+    select: { id: true, ownerId: true },
   });
-  if (!currentMember) return res.status(403).json({ error: 'Not a member of this server' });
-  if (currentMember.role?.toLowerCase() !== 'owner') return res.status(403).json({ error: 'Only the owner can transfer ownership' });
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  // Legacy fallback: a server created before ownerId existed (or by an old
+  // replica mid-deploy) may not be backfilled yet. Authorize via the member
+  // role string; the transaction below heals ownerId as part of the transfer.
+  let isCurrentOwner = server.ownerId === req.userId;
+  if (server.ownerId == null) {
+    const legacyMember = await prisma.serverMember.findUnique({
+      where: { userId_serverId: { userId: req.userId, serverId } },
+      select: { role: true },
+    });
+    isCurrentOwner = legacyMember?.role?.toLowerCase() === 'owner';
+  }
+  if (!isCurrentOwner) return res.status(403).json({ error: 'Only the owner can transfer ownership' });
   if (!newOwnerId || typeof newOwnerId !== 'string') return res.status(400).json({ error: 'newOwnerId is required' });
   if (newOwnerId === req.userId) return res.status(400).json({ error: 'Cannot transfer to yourself' });
   const newOwnerMember = await prisma.serverMember.findUnique({
@@ -829,14 +847,45 @@ router.post('/:serverId/transfer-ownership', validateUuidParams('serverId'), aut
   });
   if (!newOwnerMember) return res.status(400).json({ error: 'User is not a member of this server' });
   const [ownerRole, memberRole] = await Promise.all([
-    prisma.serverRole.findFirst({ where: { serverId, name: { equals: 'owner', mode: 'insensitive' } } }),
+    // The Owner role is the locked non-@everyone role; fall back to a name
+    // match for servers that predate the locked flag.
+    prisma.serverRole.findFirst({
+      where: { serverId, isEveryone: false, OR: [{ locked: true }, { name: { equals: 'owner', mode: 'insensitive' } }] },
+      orderBy: { locked: 'desc' },
+    }),
     prisma.serverRole.findFirst({ where: { serverId, name: { equals: 'member', mode: 'insensitive' } } }),
   ]);
+  // Move ownership as one atomic unit: the authoritative Server.ownerId, the
+  // administrator-bearing Owner MemberRole (it must move with ownership so the
+  // old owner does not retain administrator), the legacy roleId pointer, and
+  // the mirrored role string. The old owner drops to Member; the new owner
+  // gains the Owner role. MemberRole writes are idempotent (createMany
+  // skipDuplicates / deleteMany) so a re-run can't error.
   await prisma.$transaction([
-    prisma.serverMember.update({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-      data: { role: 'member', ...(memberRole ? { roleId: memberRole.id } : {}) },
+    prisma.server.update({
+      where: { id: serverId },
+      data: { ownerId: newOwnerId },
     }),
+    // Strip the Owner role (and its administrator permission) from the old owner.
+    ...(ownerRole
+      ? [prisma.memberRole.deleteMany({
+          where: { userId: req.userId, serverId, roleId: ownerRole.id },
+        })]
+      : []),
+    // updateMany: a no-op (not a P2025 throw) if the outgoing owner's member
+    // row is missing, e.g. a stale ownerId pointing at a departed user.
+    prisma.serverMember.updateMany({
+      where: { userId: req.userId, serverId },
+      data: { role: 'member', roleId: memberRole ? memberRole.id : null },
+    }),
+    // Grant the Owner role to the new owner so their administrator permission
+    // and display badge are durable, not dependent on the role string.
+    ...(ownerRole
+      ? [prisma.memberRole.createMany({
+          data: [{ userId: newOwnerId, serverId, roleId: ownerRole.id, assignedBy: req.userId }],
+          skipDuplicates: true,
+        })]
+      : []),
     prisma.serverMember.update({
       where: { userId_serverId: { userId: newOwnerId, serverId } },
       data: { role: 'owner', ...(ownerRole ? { roleId: ownerRole.id } : {}) },
@@ -1176,12 +1225,21 @@ router.delete('/:serverId/channels/:channelId', validateUuidParams('serverId', '
 router.delete('/:serverId', validateUuidParams('serverId'), authenticateToken, serverMutationLimiter, asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.userId) return res.status(401).json({ error: 'Missing user' });
   const serverId = getParam(req, 'serverId');
-  const member = await prisma.serverMember.findUnique({
-    where: { userId_serverId: { userId: req.userId, serverId } },
-    select: { userId: true, role: true },
-  });
+  const [serverRow, member] = await Promise.all([
+    prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } }),
+    prisma.serverMember.findUnique({
+      where: { userId_serverId: { userId: req.userId, serverId } },
+      select: { userId: true, role: true },
+    }),
+  ]);
+  if (!serverRow) return res.status(404).json({ error: 'Server not found' });
   if (!member) return res.status(403).json({ error: 'Not a member of this server' });
-  if (member.role?.toLowerCase() !== 'owner') return res.status(403).json({ error: 'Only the owner can delete the server' });
+  // Owner-ness is the authoritative Server.ownerId; the role string is only a
+  // fallback for servers that predate the column.
+  const isDeleteOwner = serverRow.ownerId != null
+    ? serverRow.ownerId === req.userId
+    : member.role?.toLowerCase() === 'owner';
+  if (!isDeleteOwner) return res.status(403).json({ error: 'Only the owner can delete the server' });
 
   const rawPassword = typeof req.headers['x-confirm-password'] === 'string'
     ? req.headers['x-confirm-password']

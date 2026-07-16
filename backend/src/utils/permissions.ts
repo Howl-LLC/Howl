@@ -5,8 +5,11 @@
  *
  * Effective permissions for a member = union across all their assigned roles
  * (via MemberRole) ∪ the server's @everyone role. Any role with
- * `administrator: true` grants every permission. Owner bypass (via legacy
- * `ServerMember.role === 'owner'` string) short-circuits everything.
+ * `administrator: true` grants every permission. Owner bypass short-circuits
+ * everything; owner-ness is the authoritative `Server.ownerId` (surfaced as
+ * ctx.isOwner by loadPermissionContext), with the legacy
+ * `ServerMember.role === 'owner'` string as a fallback only for contexts
+ * built without a server lookup.
  *
  * Channel resolution order (most specific wins):
  *   1. Owner / administrator bypass
@@ -50,6 +53,11 @@ export interface PermissionContext {
   member: MemberLike;
   roles: RoleLike[]; // explicit MemberRole roles (excludes @everyone)
   everyoneRole: RoleLike | null; // null only in pathological pre-migration state
+  // Authoritative owner flag, derived from Server.ownerId === userId (NOT the
+  // legacy member.role string). This is the source of truth for owner-ness in
+  // authorization. Optional so legacy callers that build a context from a bare
+  // member (ctxFromLegacy) still typecheck; those fall back to the role string.
+  isOwner?: boolean;
 }
 
 /**
@@ -117,7 +125,7 @@ export async function loadPermissionContext(
     };
   }
 
-  const [member, everyoneRole] = await Promise.all([
+  const [member, everyoneRole, server] = await Promise.all([
     prisma.serverMember.findUnique({
       where: { userId_serverId: { userId, serverId } },
       include: {
@@ -129,6 +137,10 @@ export async function loadPermissionContext(
     prisma.serverRole.findFirst({
       where: { serverId, isEveryone: true },
       select: { id: true, position: true, permissions: true, isEveryone: true },
+    }),
+    prisma.server.findUnique({
+      where: { id: serverId },
+      select: { ownerId: true },
     }),
   ]);
 
@@ -147,10 +159,18 @@ export async function loadPermissionContext(
 
   const { memberRoles: _mr, ...rawMember } = member;
 
+  // Authoritative owner-ness comes from Server.ownerId, never the role string.
+  // A legacy server whose ownerId hasn't been backfilled (should not happen
+  // post-migration) falls back to the string so owners aren't locked out.
+  const isOwner = server?.ownerId != null
+    ? server.ownerId === userId
+    : member.role?.toLowerCase() === 'owner';
+
   const ctx: LoadedPermissionContext = {
     member: { userId: member.userId, role: member.role },
     roles,
     everyoneRole,
+    isOwner,
     rawMember,
   };
 
@@ -184,6 +204,18 @@ export function unionPerms(roles: Array<RoleLike | null | undefined>): Record<st
 
 function effectiveRoles(ctx: PermissionContext): RoleLike[] {
   return ctx.everyoneRole ? [ctx.everyoneRole, ...ctx.roles] : ctx.roles;
+}
+
+/**
+ * Authoritative owner check for a context. Prefers the ownerId-derived
+ * `isOwner` flag (set by loadPermissionContext from Server.ownerId); falls back
+ * to the legacy role string only for contexts built by ctxFromLegacy, which
+ * don't know the server's ownerId. The string is kept in sync with ownerId, so
+ * the fallback stays correct, but the flag is the source of truth.
+ */
+function isOwnerCtx(ctx: PermissionContext): boolean {
+  if (ctx.isOwner !== undefined) return ctx.isOwner;
+  return ctx.member.role?.toLowerCase() === 'owner';
 }
 
 /**
@@ -248,7 +280,7 @@ export function hasPermission(
 ): boolean {
   if (!ctxOrMember) return false;
   const ctx = isContext(ctxOrMember) ? ctxOrMember : ctxFromLegacy(ctxOrMember, everyoneRole);
-  if (ctx.member.role?.toLowerCase() === 'owner') return true;
+  if (isOwnerCtx(ctx)) return true;
   const all = effectiveRoles(ctx);
   for (const r of all) {
     const p = (r.permissions as Record<string, boolean> | null) ?? {};
@@ -287,7 +319,7 @@ export function hasChannelPermission(
 ): boolean {
   if (!ctxOrMember) return false;
   const ctx = isContext(ctxOrMember) ? ctxOrMember : ctxFromLegacy(ctxOrMember, everyoneRole);
-  if (ctx.member.role?.toLowerCase() === 'owner') return true;
+  if (isOwnerCtx(ctx)) return true;
 
   // Administrator bypass from any role.
   const all = effectiveRoles(ctx);
@@ -390,7 +422,7 @@ export async function memberHasPermission(userId: string, serverId: string, perm
  * to the client (Server.myPermissions). Includes @everyone baseline.
  */
 export function computeMyPermissions(ctx: PermissionContext): Record<string, boolean> {
-  if (ctx.member.role?.toLowerCase() === 'owner') return ALL_PERMISSIONS_GRANTED;
+  if (isOwnerCtx(ctx)) return ALL_PERMISSIONS_GRANTED;
   const merged = unionPerms(effectiveRoles(ctx));
   if (merged.administrator === true) return ALL_PERMISSIONS_GRANTED;
   return merged;
@@ -448,4 +480,56 @@ export function pickDisplayRole(roles: Array<{
   const hoisted = candidates.filter((r) => r.displaySeparately);
   const pool = hoisted.length > 0 ? hoisted : candidates;
   return pool.reduce((best, r) => (r.position < best.position ? r : best), pool[0]);
+}
+
+// Permissions that grant power over other members or the server. A role
+// carrying any of these must never be reachable through self-service grant
+// paths (the self-assignable flag / role picker) — otherwise any member could
+// one-click-grant themselves moderation or management abilities. Cosmetic and
+// self-scoped perms (nickname, reactions, soundboard, external emoji, invites,
+// polls, etc.) are intentionally NOT listed, so decorative roles stay
+// self-assignable.
+export const SELF_ASSIGN_FORBIDDEN_PERMS = new Set<string>([
+  'administrator', 'manageServer', 'manageChannels', 'manageRoles', 'manageExpressions',
+  'viewAuditLog', 'manageWebhooks', 'manageNicknames', 'kickMembers', 'banMembers',
+  'timeoutMembers', 'mentionEveryone', 'manageMessages', 'muteMembers', 'moveMembers',
+  'deafenMembers', 'manageStages', 'setVoiceChannelStatus', 'managePosts',
+  'manageCalendar', 'manageEvents', 'prioritySpeaker',
+]);
+
+/** True if the permissions object grants any elevated (member/server-power)
+ *  permission that disqualifies a role from self-service grant paths. */
+export function hasElevatedPerms(permissions: unknown): boolean {
+  if (!permissions || typeof permissions !== 'object') return false;
+  for (const [key, value] of Object.entries(permissions as Record<string, unknown>)) {
+    if (value === true && SELF_ASSIGN_FORBIDDEN_PERMS.has(key)) return true;
+  }
+  return false;
+}
+
+/**
+ * True if the role carries any elevated grant — in its base permissions json
+ * OR via a channel/category permission override that allows a forbidden
+ * permission. Self-service grant paths must use this (not just the base
+ * permissions): an override can grant e.g. manageMessages in one channel to a
+ * role whose base permissions look purely cosmetic.
+ */
+export async function roleCarriesElevatedGrants(roleId: string, permissions: unknown): Promise<boolean> {
+  if (hasElevatedPerms(permissions)) return true;
+  const [channelOverrides, categoryOverrides] = await Promise.all([
+    prisma.channelPermissionOverride.findMany({
+      where: { targetType: 'role', targetId: roleId },
+      select: { permissions: true },
+      take: 500,
+    }),
+    prisma.categoryPermissionOverride.findMany({
+      where: { targetType: 'role', targetId: roleId },
+      select: { permissions: true },
+      take: 500,
+    }),
+  ]);
+  for (const o of [...channelOverrides, ...categoryOverrides]) {
+    if (hasElevatedPerms(o.permissions)) return true;
+  }
+  return false;
 }

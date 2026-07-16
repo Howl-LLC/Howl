@@ -17,6 +17,7 @@ import { createRoleSchema, updateRoleSchema, addRoleMemberSchema, reorderRolesSc
 import { powerUpTier, toRelativeUploadUrl, serverMutationLimiter } from './serverHelpers.js';
 import { getClientIp } from '../utils/clientIp.js';
 import { invalidatePermissionContext, invalidatePermissionContextForServer } from '../redis.js';
+import { hasElevatedPerms, roleCarriesElevatedGrants } from '../utils/permissions.js';
 import { emitRoleEventToMods, emitMemberRoleEventScoped } from '../utils/roleEmit.js';
 
 const _log = logger.child({ module: 'serverRoles' });
@@ -152,7 +153,7 @@ router.post('/:serverId/roles', validateUuidParams('serverId'), authenticateToke
     return res.status(400).json({ error: 'This role name is reserved' });
   }
 
-  const isOwner = member.role?.toLowerCase() === 'owner';
+  const isOwner = permCtx.isOwner === true;
   if (!isOwner && permissions && typeof permissions === 'object') {
     const requested = permissions as Record<string, boolean>;
     if (requested.administrator === true) {
@@ -168,6 +169,12 @@ router.post('/:serverId/roles', validateUuidParams('serverId'), authenticateToke
         }
       }
     }
+  }
+
+  // A self-assignable role must not carry elevated permissions, or any member
+  // could grant themselves moderation/management power through the role picker.
+  if (Boolean(selfAssignable) && hasElevatedPerms(permissions)) {
+    return res.status(400).json({ error: 'A role with moderation or management permissions cannot be made self-assignable' });
   }
 
   if (typeof icon === 'string' && icon) {
@@ -292,7 +299,7 @@ router.post('/:serverId/roles/reorder', validateUuidParams('serverId'), authenti
       return res.status(400).json({ error: 'Owner must remain at the top.' });
     }
 
-    const isOwner = member.role?.toLowerCase() === 'owner';
+    const isOwner = permCtx.isOwner === true;
     const actorPosition = permCtx.roles.length > 0
       ? Math.min(...permCtx.roles.map((r) => r.position))
       : Infinity;
@@ -424,9 +431,16 @@ router.put('/:serverId/roles/:roleId', validateUuidParams('serverId', 'roleId'),
     if (body.permissions !== undefined || body.position !== undefined) {
       return res.status(400).json({ error: "Can't change permissions or position on a locked role" });
     }
+    // The Owner role's name is load-bearing: reorder pins the owner role by
+    // name, and the legacy owner-string fallback mirrors it. Renaming it can't
+    // change authoritative ownership (that's Server.ownerId now) but would
+    // desync display and the reorder pin, so keep the name fixed.
+    if (body.name !== undefined) {
+      return res.status(400).json({ error: "Can't rename a locked role" });
+    }
   }
 
-  const isOwner = member.role?.toLowerCase() === 'owner';
+  const isOwner = permCtx.isOwner === true;
   // Effective position in Howl = MIN position across all roles (lower number = higher authority).
   // @everyone is excluded from hierarchy since it's the implicit baseline.
   const actorPosition = permCtx.roles.length > 0
@@ -490,8 +504,28 @@ router.put('/:serverId/roles/:roleId', validateUuidParams('serverId', 'roleId'),
     }
     data.position = body.position;
   }
+  // Enforce the self-assignable invariant against the POST-update state, so you
+  // can neither flag an elevated role self-assignable nor add elevated perms to
+  // an already-self-assignable role. Overrides count too: a channel/category
+  // override can grant elevated perms beyond the role's base permissions.
+  const effectiveSelfAssignable = data.selfAssignable !== undefined
+    ? data.selfAssignable === true
+    : role.selfAssignable;
+  const effectivePermsForSelfAssign = data.permissions !== undefined ? data.permissions : role.permissions;
+  if (effectiveSelfAssignable && await roleCarriesElevatedGrants(roleId, effectivePermsForSelfAssign)) {
+    return res.status(400).json({ error: 'A role with moderation or management permissions cannot be self-assignable' });
+  }
   // Wrap position shift + role update in a transaction to prevent concurrent reorder races
+  const SELF_ASSIGN_CONFLICT = 'SELF_ASSIGN_CONFLICT';
   const updated = await prisma.$transaction(async (tx) => {
+    // Re-check the self-assignable invariant against committed state under a
+    // row lock, so two overlapping PUTs (one flagging selfAssignable, one
+    // adding elevated perms) cannot interleave past the pre-check above.
+    await tx.$queryRaw`SELECT id FROM "ServerRole" WHERE id = ${roleId} FOR UPDATE`;
+    const current = await tx.serverRole.findUnique({ where: { id: roleId }, select: { selfAssignable: true, permissions: true } });
+    const effSelf = data.selfAssignable !== undefined ? data.selfAssignable === true : current?.selfAssignable === true;
+    const effPerms = data.permissions !== undefined ? data.permissions : current?.permissions;
+    if (effSelf && hasElevatedPerms(effPerms)) throw new Error(SELF_ASSIGN_CONFLICT);
     if (data.position !== undefined) {
       // Shift roles at or above the target position up by 1 to prevent collisions
       await tx.serverRole.updateMany({
@@ -500,7 +534,13 @@ router.put('/:serverId/roles/:roleId', validateUuidParams('serverId', 'roleId'),
       });
     }
     return tx.serverRole.update({ where: { id: roleId }, data: data as never });
+  }).catch((err: Error) => {
+    if (err.message === SELF_ASSIGN_CONFLICT) return null;
+    throw err;
   });
+  if (!updated) {
+    return res.status(400).json({ error: 'A role with moderation or management permissions cannot be self-assignable' });
+  }
   const count = await prisma.memberRole.count({ where: { roleId: updated.id } });
   // Role permission/position change cascades to every cached member context
   // that includes this role; position changes can also reshuffle hierarchy
@@ -560,7 +600,7 @@ router.delete('/:serverId/roles/:roleId', validateUuidParams('serverId', 'roleId
   if (role.isEveryone) return res.status(400).json({ error: 'Cannot delete the @everyone role' });
   if (role.locked) return res.status(400).json({ error: 'Cannot delete locked role' });
 
-  const isOwner = member.role?.toLowerCase() === 'owner';
+  const isOwner = permCtx.isOwner === true;
   if (!isOwner) {
     const actorPosition = permCtx.roles.length > 0
       ? Math.min(...permCtx.roles.map(r => r.position))
@@ -570,11 +610,20 @@ router.delete('/:serverId/roles/:roleId', validateUuidParams('serverId', 'roleId
     }
   }
 
-  // Find affected members BEFORE deletion so we can recompute their display role and emit events.
+  // Find affected members BEFORE deletion so we can recompute their display role
+  // and emit events. Bounded so deleting a role held by a pathological number of
+  // members can't turn one request into an unbounded synchronous storm. If the
+  // cap is ever hit we log it rather than silently skipping the remainder (those
+  // members' display columns self-heal on their next role touch or a /roles read).
+  const MAX_AFFECTED_MEMBERS = 100_000;
   const affectedMembers = await prisma.memberRole.findMany({
     where: { serverId, roleId },
     select: { userId: true },
+    take: MAX_AFFECTED_MEMBERS,
   });
+  if (affectedMembers.length === MAX_AFFECTED_MEMBERS) {
+    _log.warn({ serverId, roleId }, 'role delete hit affected-member cap; remaining members will recompute display lazily');
+  }
 
   // Self Roles cleanup: any pending RoleClaimRequest for entries pointing at
   // this role should be marked withdrawn so applicants are notified before
@@ -619,68 +668,114 @@ router.delete('/:serverId/roles/:roleId', validateUuidParams('serverId', 'roleId
   const io = req.app.get('io') as import('socket.io').Server | undefined;
   if (io) io.to(`server:${serverId}`).emit('server-role-deleted', { serverId, roleId });
 
-  for (const { userId } of affectedMembers) {
-    // Pick a new display role from remaining MemberRole assignments.
-    const remainingRoles = await prisma.memberRole.findMany({
-      where: { userId, serverId },
+  // Recompute display roles and emit, in batches. Each batch does ONE read for
+  // all its members' remaining roles and groups the legacy-column writes into a
+  // few updateMany calls by new display role, replacing the old per-member
+  // query + update (an unbounded N+1 that held a DB connection for the whole
+  // deletion). Writes happen BEFORE the socket emits so clients that refetch on
+  // the events read the new state, and a failed batch is tolerated (the display
+  // columns self-heal on the member's next role touch or a /roles read) instead
+  // of failing the request after the role is already deleted.
+  const RECOMPUTE_BATCH = 500;
+  for (let i = 0; i < affectedMembers.length; i += RECOMPUTE_BATCH) {
+    const chunkIds = affectedMembers.slice(i, i + RECOMPUTE_BATCH).map((m) => m.userId);
+    const remainingCap = chunkIds.length * 100;
+    const remaining = await prisma.memberRole.findMany({
+      where: { serverId, userId: { in: chunkIds } },
       include: { role: { select: { id: true, name: true, color: true, style: true, position: true, displaySeparately: true, isEveryone: true, hidden: true } } },
+      orderBy: [{ userId: 'asc' }, { roleId: 'asc' }],
+      take: remainingCap,
     });
-    const display = pickDisplayRole(remainingRoles.map(mr => mr.role));
-    // Update the legacy single-role fields to reflect the new display role (or fallback to 'member').
-    await prisma.serverMember.update({
-      where: { userId_serverId: { userId, serverId } },
-      data: {
-        roleId: display?.id ?? null,
-        role: display?.name ?? 'member',
-      },
-    }).catch(() => {});
-    if (io) {
-      const allNonEveryoneIds = remainingRoles.filter(mr => !mr.role.isEveryone).map(mr => mr.role.id);
-      const visibleRoleIds = remainingRoles.filter(mr => !mr.role.isEveryone && !mr.role.hidden).map(mr => mr.role.id);
-      const visibleDisplay = pickDisplayRole(remainingRoles.filter(mr => !mr.role.hidden).map(mr => mr.role));
-      // A member who separately holds a hidden role would otherwise leak that
-      // role's display metadata (name/color, when it becomes their new display
-      // after the deletion) and its id in roles[] to non-mods on the room
-      // broadcast. (The deleted role itself is already gone server-wide and
-      // `server-role-deleted` fired above, so only a still-held hidden role can
-      // leak here.) Mirrors the assign/remove-member sites' broadened trigger.
-      const hiddenInvolved = remainingRoles.some(mr => mr.role.hidden && !mr.role.isEveryone);
+    if (remaining.length === remainingCap) {
+      _log.warn({ serverId, roleId }, 'role-delete recompute read hit its cap; some display columns will heal on next role touch');
+    }
+    type RemRole = (typeof remaining)[number]['role'];
+    const rolesByUser = new Map<string, RemRole[]>();
+    for (const uid of chunkIds) rolesByUser.set(uid, []);
+    for (const mr of remaining) rolesByUser.get(mr.userId)?.push(mr.role);
 
-      if (hiddenInvolved) {
-        await emitMemberRoleEventScoped(io, serverId, 'server-member-role-removed', {
-          full: { serverId, userId, roleId, roles: allNonEveryoneIds },
-          sanitized: { serverId, userId, roleId, roles: visibleRoleIds },
-        });
-        // Legacy compat event — carries the new display role.
-        await emitMemberRoleEventScoped(io, serverId, 'server-member-role-updated', {
-          full: {
+    // Group the legacy display-column writes by the new display role so we do a
+    // handful of updateMany calls per batch instead of one update per member.
+    const updateGroups = new Map<string, { roleId: string | null; roleName: string; userIds: string[] }>();
+    const displayByUser = new Map<string, ReturnType<typeof pickDisplayRole>>();
+
+    for (const userId of chunkIds) {
+      const memberRoles = rolesByUser.get(userId) ?? [];
+      const display = pickDisplayRole(memberRoles);
+      displayByUser.set(userId, display);
+      const gKey = display?.id ?? '__none__';
+      let g = updateGroups.get(gKey);
+      if (!g) { g = { roleId: display?.id ?? null, roleName: display?.name ?? 'member', userIds: [] }; updateGroups.set(gKey, g); }
+      g.userIds.push(userId);
+    }
+
+    if (updateGroups.size > 0) {
+      try {
+        await prisma.$transaction(
+          [...updateGroups.values()].map((g) =>
+            prisma.serverMember.updateMany({
+              where: { serverId, userId: { in: g.userIds } },
+              data: { roleId: g.roleId, role: g.roleName },
+            }),
+          ),
+        );
+      } catch (err) {
+        _log.warn({ serverId, roleId, error: (err as Error).message }, 'role-delete display recompute batch failed; columns heal lazily');
+      }
+    }
+
+    for (const userId of chunkIds) {
+      const memberRoles = rolesByUser.get(userId) ?? [];
+      const display = displayByUser.get(userId) ?? null;
+
+      if (io) {
+        const allNonEveryoneIds = memberRoles.filter((r) => !r.isEveryone).map((r) => r.id);
+        const visibleRoleIds = memberRoles.filter((r) => !r.isEveryone && !r.hidden).map((r) => r.id);
+        const visibleDisplay = pickDisplayRole(memberRoles.filter((r) => !r.hidden));
+        // A member who separately holds a hidden role would otherwise leak that
+        // role's display metadata (name/color, when it becomes their new display
+        // after the deletion) and its id in roles[] to non-mods on the room
+        // broadcast. (The deleted role itself is already gone server-wide and
+        // `server-role-deleted` fired above, so only a still-held hidden role can
+        // leak here.) Mirrors the assign/remove-member sites' broadened trigger.
+        const hiddenInvolved = memberRoles.some((r) => r.hidden && !r.isEveryone);
+
+        if (hiddenInvolved) {
+          await emitMemberRoleEventScoped(io, serverId, 'server-member-role-removed', {
+            full: { serverId, userId, roleId, roles: allNonEveryoneIds },
+            sanitized: { serverId, userId, roleId, roles: visibleRoleIds },
+          });
+          // Legacy compat event — carries the new display role.
+          await emitMemberRoleEventScoped(io, serverId, 'server-member-role-updated', {
+            full: {
+              serverId, userId,
+              roleId: display?.id ?? null,
+              roleName: display?.name ?? 'member',
+              roleColor: display?.color ?? '#99aab5',
+              roleStyle: display?.style ?? 'solid',
+            },
+            sanitized: {
+              serverId, userId,
+              roleId: visibleDisplay?.id ?? null,
+              roleName: visibleDisplay?.name ?? 'member',
+              roleColor: visibleDisplay?.color ?? '#99aab5',
+              roleStyle: visibleDisplay?.style ?? 'solid',
+            },
+          });
+        } else {
+          io.to(`server:${serverId}`).emit('server-member-role-removed', {
+            serverId, userId, roleId,
+            roles: allNonEveryoneIds,
+          });
+          // Legacy compat event — carries the new display role.
+          io.to(`server:${serverId}`).emit('server-member-role-updated', {
             serverId, userId,
             roleId: display?.id ?? null,
             roleName: display?.name ?? 'member',
             roleColor: display?.color ?? '#99aab5',
             roleStyle: display?.style ?? 'solid',
-          },
-          sanitized: {
-            serverId, userId,
-            roleId: visibleDisplay?.id ?? null,
-            roleName: visibleDisplay?.name ?? 'member',
-            roleColor: visibleDisplay?.color ?? '#99aab5',
-            roleStyle: visibleDisplay?.style ?? 'solid',
-          },
-        });
-      } else {
-        io.to(`server:${serverId}`).emit('server-member-role-removed', {
-          serverId, userId, roleId,
-          roles: allNonEveryoneIds,
-        });
-        // Legacy compat event — carries the new display role.
-        io.to(`server:${serverId}`).emit('server-member-role-updated', {
-          serverId, userId,
-          roleId: display?.id ?? null,
-          roleName: display?.name ?? 'member',
-          roleColor: display?.color ?? '#99aab5',
-          roleStyle: display?.style ?? 'solid',
-        });
+          });
+        }
       }
     }
   }
@@ -708,8 +803,12 @@ router.post('/:serverId/roles/:roleId/members', validateUuidParams('serverId', '
   const role = await prisma.serverRole.findFirst({ where: { id: roleId, serverId } });
   if (!role) return res.status(404).json({ error: 'Role not found' });
   if (role.isEveryone) return res.status(400).json({ error: '@everyone is implicit — cannot assign or remove' });
+  // Locked roles (Owner, @everyone) are system-managed and must never be
+  // granted via role assignment; ownership moves only through
+  // transfer-ownership, the single authoritative path.
+  if (role.locked) return res.status(400).json({ error: 'This role is system-managed and cannot be assigned' });
 
-  const isOwner = actor.role?.toLowerCase() === 'owner';
+  const isOwner = actorCtx.isOwner === true;
   const actorPosition = actorCtx.roles.length > 0
     ? Math.min(...actorCtx.roles.map(r => r.position))
     : Infinity;
@@ -829,14 +928,34 @@ router.delete('/:serverId/roles/:roleId/members/:userId', validateUuidParams('se
   const targetRole = await prisma.serverRole.findFirst({ where: { id: roleId, serverId } });
   if (!targetRole) return res.status(404).json({ error: 'Role not found' });
   if (targetRole.isEveryone) return res.status(400).json({ error: '@everyone is implicit — cannot remove' });
+  // Locked roles are system-managed. Blocking removal here keeps the invariant
+  // that the owner always holds the Owner MemberRole (so their administrator
+  // permission and display badge never drift), matching the assign-side block.
+  if (targetRole.locked) return res.status(400).json({ error: 'This role is system-managed and cannot be removed' });
 
-  const isOwner = actor.role?.toLowerCase() === 'owner';
+  const isOwner = actorCtx.isOwner === true;
+  const actorPosition = actorCtx.roles.length > 0
+    ? Math.min(...actorCtx.roles.map(r => r.position))
+    : Infinity;
+  if (!isOwner && targetRole.position <= actorPosition) {
+    return res.status(403).json({ error: 'You cannot remove members from a role at or above your own position' });
+  }
+
+  // Target-member hierarchy gate — mirror the add-member path. A non-owner
+  // cannot alter the roles of a member who outranks them (or the owner), even
+  // for a role positioned below the actor; without it a low-ranked mod could
+  // strip roles from a superior.
+  const targetCtx = await loadPermissionContext(targetUserId, serverId);
+  if (!targetCtx) return res.status(404).json({ error: 'User is not a member of this server' });
   if (!isOwner) {
-    const actorPosition = actorCtx.roles.length > 0
-      ? Math.min(...actorCtx.roles.map(r => r.position))
+    if (targetCtx.isOwner === true) {
+      return res.status(403).json({ error: "You cannot change the owner's roles" });
+    }
+    const targetPosition = targetCtx.roles.length > 0
+      ? Math.min(...targetCtx.roles.map(r => r.position))
       : Infinity;
-    if (targetRole.position <= actorPosition) {
-      return res.status(403).json({ error: 'You cannot remove members from a role at or above your own position' });
+    if (targetPosition <= actorPosition) {
+      return res.status(403).json({ error: 'You cannot change the role of a member whose role is at or above your own' });
     }
   }
 

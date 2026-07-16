@@ -84,6 +84,7 @@ export async function tryClaimFirstAdmin(input: FirstAdminInput): Promise<{ id: 
     const server = await tx.server.create({
       data: {
         name: `${input.username}'s Server`,
+        ownerId: user.id,
         members: { create: { userId: user.id, role: 'owner' } },
         categories: { create: { name: 'General', position: 0 } },
       },

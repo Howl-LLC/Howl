@@ -608,6 +608,16 @@ model Server {
   powerUpPeriodEnd DateTime?
   createdAt        DateTime  @default(now())
 
+  // Authoritative server owner. This is the single source of truth for
+  // ownership — NOT the legacy `ServerMember.role == 'owner'` string, which is
+  // a display mirror that the display-role recompute rewrites and which used to
+  // be the only owner signal (it could drift on transfer, rename, or role
+  // reassignment). Owner-ness for authorization is derived from this column via
+  // loadPermissionContext (see utils/permissions.ts). Nullable only so the
+  // additive migration can add the column before backfill; every server has an
+  // owner in practice. Set on create and moved atomically on transfer.
+  ownerId          String?
+
   // Community / discovery fields.
   // vanityUrl: globally unique lowercase slug (3-32, [a-z0-9-]+) used for
   // /s/<slug> public preview links. Format validated at the API layer.
@@ -668,6 +678,7 @@ model Server {
 
   @@index([powerUpCount])
   @@index([createdAt])
+  @@index([ownerId])
   // Discovery directory hot-path: every list query combines these flags.
   @@index([featured, hiddenFromDiscovery, suspendedAt])
 }

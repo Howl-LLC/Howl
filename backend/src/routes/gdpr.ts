@@ -463,35 +463,69 @@ router.post('/delete', authenticateToken, gdprLimiter, validate(gdprDeleteSchema
       }
     }
 
-    // 0b. Check for owned servers — transfer or block deletion (wrapped in transaction to prevent races)
-    const ownedServers = await prisma.serverMember.findMany({
-      where: { userId: req.userId, role: 'owner' },
-      select: { serverId: true },
-      take: 200,
-    });
-    for (const owned of ownedServers) {
+    // 0b. Check for owned servers — transfer or block deletion (wrapped in transaction to prevent races).
+    // Owner-ness is the authoritative Server.ownerId; the case-insensitive
+    // string query only catches legacy servers whose ownerId was never
+    // backfilled (the display recompute may capitalize the string, so an
+    // exact-match lookup would miss them).
+    const [ownedByColumn, ownedLegacy] = await Promise.all([
+      prisma.server.findMany({
+        where: { ownerId: req.userId },
+        select: { id: true },
+        take: 200,
+      }),
+      prisma.serverMember.findMany({
+        where: { userId: req.userId, role: { equals: 'owner', mode: 'insensitive' }, server: { ownerId: null } },
+        select: { serverId: true },
+        take: 200,
+      }),
+    ]);
+    const ownedServerIds = [...new Set([...ownedByColumn.map((s) => s.id), ...ownedLegacy.map((m) => m.serverId)])];
+    for (const ownedServerId of ownedServerIds) {
       const transferredTo = await prisma.$transaction(async (tx) => {
         const nextOwner = await tx.serverMember.findFirst({
-          where: { serverId: owned.serverId, userId: { not: req.userId } },
+          where: { serverId: ownedServerId, userId: { not: req.userId } },
           orderBy: { joinedAt: 'asc' },
           select: { userId: true },
         });
         if (nextOwner) {
+          // Mirror the transfer-ownership route: move the authoritative
+          // ownerId, the administrator-bearing Owner MemberRole, and the
+          // legacy display columns as one unit, so the successor actually
+          // holds owner authority (not just the display string).
           const ownerRole = await tx.serverRole.findFirst({
-            where: { serverId: owned.serverId, name: { equals: 'Owner', mode: 'insensitive' } },
+            where: { serverId: ownedServerId, isEveryone: false, OR: [{ locked: true }, { name: { equals: 'owner', mode: 'insensitive' } }] },
+            orderBy: { locked: 'desc' },
             select: { id: true },
           });
+          await tx.server.update({
+            where: { id: ownedServerId },
+            data: { ownerId: nextOwner.userId },
+          });
+          if (ownerRole) {
+            await tx.memberRole.createMany({
+              data: [{ userId: nextOwner.userId, serverId: ownedServerId, roleId: ownerRole.id, assignedBy: null }],
+              skipDuplicates: true,
+            });
+            // Strip the departing owner's administrator-bearing Owner role in
+            // the same transaction, so the succession is self-contained: if the
+            // later account-delete transaction aborts, the old owner is not
+            // left holding administrator while ownerId already points elsewhere.
+            await tx.memberRole.deleteMany({
+              where: { userId: req.userId, serverId: ownedServerId, roleId: ownerRole.id },
+            });
+          }
           await tx.serverMember.update({
-            where: { userId_serverId: { userId: nextOwner.userId, serverId: owned.serverId } },
+            where: { userId_serverId: { userId: nextOwner.userId, serverId: ownedServerId } },
             data: { role: 'owner', ...(ownerRole ? { roleId: ownerRole.id } : {}) },
           });
           return nextOwner.userId;
         }
-        await tx.server.delete({ where: { id: owned.serverId } });
+        await tx.server.delete({ where: { id: ownedServerId } });
         return null;
       });
       if (transferredTo) {
-        await invalidatePermissionContext(owned.serverId, transferredTo);
+        await invalidatePermissionContext(ownedServerId, transferredTo);
       }
     }
 

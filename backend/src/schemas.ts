@@ -617,7 +617,7 @@ export const updatePrivacySchema = z.object({
 
 // Roles
 
-const roleStyleEnum = z.enum(['solid', 'gradient', 'animated']).default('solid');
+const roleStyleEnum = z.enum(['solid', 'gradient', 'holographic']).default('solid');
 
 const permissionsObject = z.object(
   Object.fromEntries(VALID_PERMISSIONS.map(k => [k, z.boolean().optional()]))
@@ -2598,7 +2598,7 @@ export const updateRolePickerSchema = z.object({
   body: z.object({
     heroTitle: z.string().trim().max(80).nullable().optional(),
     heroDescription: z.string().trim().max(280).nullable().optional(),
-  }),
+  }).strict(),
 });
 
 export const createPickerCategorySchema = z.object({
@@ -2606,7 +2606,7 @@ export const createPickerCategorySchema = z.object({
     name: z.string().trim().min(1).max(40),
     pickMode: z.enum(['single', 'multi']).default('multi'),
     required: z.boolean().optional(),
-  }),
+  }).strict(),
 });
 
 export const updatePickerCategorySchema = z.object({
@@ -2615,7 +2615,7 @@ export const updatePickerCategorySchema = z.object({
     pickMode: z.enum(['single', 'multi']).optional(),
     position: z.number().int().min(0).optional(),
     required: z.boolean().optional(),
-  }),
+  }).strict(),
 });
 
 export const completeServerOnboardingSchema = z.object({
@@ -2629,7 +2629,7 @@ export const createPickerEntrySchema = z.object({
     iconUrl: z.string().trim().url().max(2048).nullable().optional(),
     description: z.string().trim().max(200).nullable().optional(),
     requirements: conditionRequirementsSchema.nullable().optional(),
-  }),
+  }).strict(),
 });
 
 export const updatePickerEntrySchema = z.object({
@@ -2638,27 +2638,27 @@ export const updatePickerEntrySchema = z.object({
     iconUrl: z.string().trim().url().max(2048).nullable().optional(),
     description: z.string().trim().max(200).nullable().optional(),
     requirements: conditionRequirementsSchema.nullable().optional(),
-  }),
+  }).strict(),
 });
 
 export const movePickerEntrySchema = z.object({
   body: z.object({
     categoryId: z.string().uuid().optional(),
     position: z.number().int().min(0),
-  }),
+  }).strict(),
 });
 
 export const submitClaimRequestSchema = z.object({
   body: z.object({
     applicantMessage: z.string().trim().max(500).optional(),
-  }),
+  }).strict(),
 });
 
 export const decideClaimRequestSchema = z.object({
   body: z.object({
     decision: z.enum(['approve', 'reject']),
     decisionNote: z.string().trim().max(500).optional(),
-  }),
+  }).strict(),
 });
 
 export const listClaimRequestsSchema = z.object({

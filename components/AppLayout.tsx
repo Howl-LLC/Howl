@@ -2437,9 +2437,7 @@ export function AppLayout(props: AppLayoutProps) {
                   try { if (localStorage.getItem('howl_last_dm_channel') === id) localStorage.removeItem('howl_last_dm_channel'); } catch { /* ignored */ }
                   useUiStore.getState().setUserContextMenuTarget(null);
                 }}
-                onInviteToServer={() => useUiStore.getState().setUserContextMenuTarget(null)}
                 onRemoveFriend={(userId) => { useUiStore.getState().setDmRemoveFriendConfirm({ userId, username: formatUsername(userContextMenuTarget.user) }); useUiStore.getState().setUserContextMenuTarget(null); }}
-                onIgnore={() => useUiStore.getState().setUserContextMenuTarget(null)}
                 onBlock={(userId) => {
                   const target = userContextMenuTarget.user.username;
                   useUiStore.getState().setDestructiveConfirm({

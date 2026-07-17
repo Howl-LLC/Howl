@@ -6,8 +6,6 @@ import { useTranslation } from 'react-i18next';
 import {
   Check,
   User as UserIcon,
-  Phone,
-  FileText,
   ChevronRight,
   UserMinus,
   X,
@@ -40,9 +38,7 @@ interface DirectMessageContextMenuProps {
   onMarkAsRead: (dmChannelId: string) => void;
   onProfile: (userId: string) => void;
   onCloseDM: (dmChannelId: string) => void;
-  onInviteToServer?: () => void;
   onRemoveFriend?: (userId: string) => void;
-  onIgnore?: (userId: string) => void;
   onBlock?: (userId: string) => void;
   isBlocked?: boolean;
   onUnblock?: (userId: string) => void;
@@ -66,9 +62,7 @@ export const DirectMessageContextMenu: React.FC<DirectMessageContextMenuProps> =
   onMarkAsRead,
   onProfile,
   onCloseDM,
-  onInviteToServer,
   onRemoveFriend,
-  onIgnore,
   onBlock,
   isBlocked,
   onUnblock,
@@ -158,7 +152,6 @@ export const DirectMessageContextMenu: React.FC<DirectMessageContextMenuProps> =
           </button>
           {sep()}
           {item(t('dmMenu.profile'), () => onProfile(user.id), <UserIcon size={16} className="opacity-70 shrink-0" />)}
-          {item(t('dmMenu.call'), () => {}, <Phone size={16} className="opacity-70 shrink-0" />)}
           {showVolumeRow && (
             <>
               {sep()}
@@ -188,29 +181,12 @@ export const DirectMessageContextMenu: React.FC<DirectMessageContextMenuProps> =
               </div>
             </>
           )}
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => { onClose(); }}
-            className="w-full flex items-center gap-3 px-3 py-2 mx-1.5 rounded-lg text-left text-[13px] font-medium tracking-tight hover:bg-fill-hover transition-colors"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            <FileText size={16} className="opacity-70 shrink-0" />
-            <div className="flex-1 text-left">
-              <div>{t('dmMenu.addNote')}</div>
-              <div className="text-[11px] font-normal opacity-70">{t('dmMenu.onlyVisibleToYou')}</div>
-            </div>
-          </button>
-          {item(t('dmMenu.addFriendNickname'), () => {}, undefined)}
           {isPinned && onUnpinConversation
             ? item(t('dmMenu.unpinConversation'), () => onUnpinConversation(dmChannelId), <Pin size={16} className="opacity-70 shrink-0" />)
             : onPinConversation && item(t('dmMenu.pinConversation'), () => onPinConversation(dmChannelId), <Pin size={16} className="opacity-70 shrink-0" />)}
           {item(t('dmMenu.closeDm'), () => onCloseDM(dmChannelId), <X size={16} className="opacity-70 shrink-0" />)}
           {sep()}
-          {item(t('dmMenu.apps'), () => {}, undefined, false, true)}
-          {onInviteToServer && item(t('dmMenu.inviteToServer'), onInviteToServer, undefined, false, true)}
           {onRemoveFriend && item(t('dmMenu.removeFriend'), () => onRemoveFriend(user.id), <UserMinus size={16} className="opacity-70 shrink-0" />)}
-          {onIgnore && item(t('dmMenu.ignore'), () => onIgnore(user.id), undefined)}
           {isBlocked && onUnblock ? item(t('common.unblock'), () => onUnblock(user.id), undefined) : onBlock ? item(t('common.block'), () => onBlock(user.id), undefined, true) : null}
           {onMute && (
             <>

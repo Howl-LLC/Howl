@@ -758,9 +758,12 @@ export const RolesSection: React.FC<RolesSectionProps> = ({
               try {
                 await onDeleteRole(server.id, selectedRole.id);
                 setSelectedRoleId(null);
-                if (getServerRoles) { const r = await getServerRoles(server.id); setRoles2(r.map(apiRoleToServerRole)); }
-                onRolesUpdated?.();
                 showToast(t('serverSettings.roleDeleted'));
+                // Refetch outside the try: the delete already succeeded, so a
+                // failed refresh must not report "failed to delete". The socket
+                // server-role-deleted event reconciles the list independently.
+                if (getServerRoles) { getServerRoles(server.id).then((r) => setRoles2(r.map(apiRoleToServerRole))).catch(() => {}); }
+                onRolesUpdated?.();
               } catch { showToast(t('serverSettings.failedToDeleteRole'), 'error'); }
               setConfirmDialog(null);
             }})}>{t('serverSettings.deleteRole')}</DangerButton>

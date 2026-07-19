@@ -303,6 +303,13 @@ export interface AppLayoutProps {
   joinedServerRoomsRef: React.MutableRefObject<Set<string>>;
 }
 
+// Stable identities for API pass-through props. Inline `.bind(apiClient)` mints a
+// new function every render, and the settings sections key their load effects on
+// these props, so a churning identity refires those effects on every AppLayout
+// render (roles/invites screens reload in a loop and trip the API rate limit).
+const getServerInvitesApi = (serverId: string) => apiClient.getServerInvites(serverId);
+const getServerRolesApi = (serverId: string) => apiClient.getServerRoles(serverId);
+
 export function AppLayout(props: AppLayoutProps) {
   useRenderLoopDetector('AppLayout');
   const { t } = useTranslation();
@@ -1276,8 +1283,8 @@ export function AppLayout(props: AppLayoutProps) {
                   onDeleteServer={adaptedDeleteServer}
                   otherServerMembers={otherServerMembersMemo}
                   serverMembers={serverMembers}
-                  getServerInvites={apiClient.getServerInvites.bind(apiClient)}
-                  getServerRoles={apiClient.getServerRoles.bind(apiClient)}
+                  getServerInvites={getServerInvitesApi}
+                  getServerRoles={getServerRolesApi}
                   onUpdateRole={async (sid, rid, data) => { await apiClient.updateServerRole(sid, rid, data as { name?: string; color?: string; style?: string; icon?: string; permissions?: Record<string, boolean>; displaySeparately?: boolean; allowMention?: boolean }); }}
                   onCreateRole={(sid, data) => apiClient.createServerRole(sid, { name: data.name as string, color: data.color as string, permissions: (data.permissions as Record<string, boolean>) ?? {} })}
                   onDeleteRole={apiClient.deleteServerRole.bind(apiClient)}

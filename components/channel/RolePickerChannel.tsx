@@ -198,14 +198,15 @@ export const RolePickerChannel: React.FC<RolePickerChannelProps> = ({ server, ch
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto p-6">
-          {/* Hero card */}
-          <div className="mb-6 p-4 rounded-2xl bg-gradient-to-br from-[var(--accent-muted)] to-transparent border border-[var(--cyan-accent)]/20 flex items-center gap-4">
-            <div className="w-11 h-11 rounded-xl bg-[var(--cyan-accent)] text-black flex items-center justify-center shrink-0 text-lg font-bold">★</div>
+          {/* Hero card. Solid deep logo-blue, same fill as btn-cta / selected
+              role cards, so it lines up with the rest of the app. */}
+          <div className="mb-6 p-4 rounded-2xl bg-[var(--cta-bg)] flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl bg-white/10 text-white flex items-center justify-center shrink-0 text-lg font-bold">★</div>
             <div className="min-w-0">
-              <h2 className="text-base font-semibold text-t-primary">{tree.heroTitle || t('rolePicker.defaultHero', { defaultValue: 'Pick the roles that fit you' })}</h2>
-              <p className="text-xs text-t-secondary mt-0.5">
+              <h2 className="text-base font-semibold text-white">{tree.heroTitle || t('rolePicker.defaultHero', { defaultValue: 'Pick the roles that fit you' })}</h2>
+              <p className="text-xs text-white/70 mt-0.5">
                 {tree.heroDescription || t('rolePicker.defaultHeroDesc', {
-                  defaultValue: 'Roles control how you appear in the member list and which announcements ping you. Toggle any time — your changes apply instantly.',
+                  defaultValue: 'Roles control how you appear in the member list and which announcements ping you. Toggle any time. Your changes apply instantly.',
                 })}
               </p>
             </div>

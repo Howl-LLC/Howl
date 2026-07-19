@@ -690,7 +690,7 @@ export default function VoiceVideoTab({ voiceSettings, onVoiceSettingsChange, su
 
             <div id="setting-noise-suppression"><SelectRow
               label={t('settings.noiseSuppression')}
-              description={vs.noiseEngine !== 'off' ? t('settings.noiseSuppressionDisabledHint', 'Disabled — handled by Advanced Noise Suppression below') : undefined}
+              description={vs.noiseEngine !== 'off' ? t('settings.noiseSuppressionDisabledHint', 'Disabled. Handled by Advanced Noise Suppression below') : undefined}
               disabled={vs.noiseEngine !== 'off'}
               value={vs.noiseSuppression}
               options={[

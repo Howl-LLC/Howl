@@ -143,7 +143,7 @@ const LABELS: Record<
   },
   member_retention_met: {
     label: `At least ${Math.round(DISCOVERY_MIN_RETENTION_RATE * 100)}% of new members stay past 7 days`,
-    metExplanation: 'New members are sticking around — healthy retention.',
+    metExplanation: 'New members are sticking around. Healthy retention.',
     fix: null,
   },
   has_icon: {

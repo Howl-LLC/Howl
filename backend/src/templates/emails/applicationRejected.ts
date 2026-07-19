@@ -24,7 +24,7 @@ export function applicationRejected(params: ApplicationRejectedParams): Rendered
         <p style="color: #94a3b8; font-size: 14px; margin: 0 0 16px;">Hi ${escapeHtml(params.applicantName)},</p>
         <p style="color: #94a3b8; font-size: 14px; margin: 0 0 16px;">Thanks for your interest in <strong style="color: #f1f5f9;">${escapeHtml(params.serverName)}</strong>. The moderators have decided not to accept your application at this time.</p>
         ${noteBlock}
-        <p style="color: #64748b; font-size: 12px; margin: 24px 0 0;">Don't take it personally — every community sets its own bar. There are plenty more servers to explore on Howl.</p>
+        <p style="color: #64748b; font-size: 12px; margin: 24px 0 0;">Don't take it personally. Every community sets its own bar. There are plenty more servers to explore on Howl.</p>
   `);
   return { subject, html, text: htmlToText(html) };
 }

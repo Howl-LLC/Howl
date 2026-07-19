@@ -292,7 +292,7 @@ router.post('/:id/refresh', validateUuidParams('id'), authenticateToken, gameAcc
       const nextAvailable = new Date(account.statsCache.lastFetched.getTime() + effectiveCooldownMs);
       return res.status(429).json({
         error: cooldownReason === 'transient'
-          ? 'Provider is having issues — retry in ~1h'
+          ? 'Provider is having issues, retry in ~1h'
           : cooldownReason === 'fast-retry'
             ? 'Error retry on cooldown (30s)'
             : 'Manual refresh on cooldown',

@@ -615,7 +615,7 @@ export const StageView: React.FC<StageViewProps> = ({
             style={{ flex: '1 1 50%', maxHeight: '66%', minHeight: '120px' }}
           >
             <h4 className="text-[9px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-secondary)' }}>
-              {t('stages.speakers')} &mdash; {session.speakers.length}
+              {t('stages.speakers')} · {session.speakers.length}
             </h4>
             {(() => {
               const screenShareCount = sortedSpeakers.filter(s => { const st = getSpeakerStreams(s.userId); return !!st.screenStream; }).length;
@@ -734,7 +734,7 @@ export const StageView: React.FC<StageViewProps> = ({
             style={{ flex: '1 1 50%', minHeight: '80px' }}
           >
             <h4 className="text-[9px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-secondary)' }}>
-              {t('stages.audience')} &mdash; {session.audienceCount}
+              {t('stages.audience')} · {session.audienceCount}
             </h4>
             <div className="flex flex-col gap-0.5">
               {(session.audienceMembers ?? []).map((member) => (
@@ -814,7 +814,7 @@ export const StageView: React.FC<StageViewProps> = ({
               </span>
             )}
             {hasJoined && isE2eeFailed && (
-              <span className="flex items-center gap-1 px-2 py-1 text-amber-400" title={t('voiceCall.e2eeFailed', 'Not end-to-end encrypted \u2014 key exchange failed')}>
+              <span className="flex items-center gap-1 px-2 py-1 text-amber-400" title={t('voiceCall.e2eeFailed', 'Not end-to-end encrypted. Key exchange failed')}>
                 <ShieldAlert size={14} />
               </span>
             )}

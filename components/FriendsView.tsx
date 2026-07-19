@@ -103,9 +103,9 @@ const FriendListItem = React.memo(function FriendListItem({
               )}
               <span className="text-[11px] font-medium truncate text-t-secondary">
                 {friend.activity.type === 'spotify' && friend.activity.details
-                  ? <>{friend.activity.details} — {friend.activity.name}</>
+                  ? <>{friend.activity.details} · {friend.activity.name}</>
                   : (friend.activity.type === 'twitch_live' || friend.activity.type === 'youtube_live') && friend.activity.state
-                  ? <>{friend.activity.name} — {friend.activity.state}</>
+                  ? <>{friend.activity.name} · {friend.activity.state}</>
                   : friend.activity.name}
               </span>
               <span className="text-[10px] shrink-0 text-t-secondary opacity-50">

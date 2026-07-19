@@ -136,7 +136,7 @@ function ToastCard({ notification, clickableRegions, onDismiss, onReply }: Toast
         title="Howl"
         subtitle={
           <span>
-            {'Overlay active \u2014 press '}
+            {'Overlay active. Press '}
             <span style={{
               display: 'inline-block',
               padding: '1px 5px',

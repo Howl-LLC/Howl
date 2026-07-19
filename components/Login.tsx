@@ -1281,8 +1281,8 @@ export const Login: React.FC<LoginProps> = ({ onAuthSuccess }) => {
               <p>This Privacy Policy describes how Howl collects, uses, stores, and protects your personal information when you use the Howl platform.</p>
 
               <h4 className="text-white font-bold text-xs uppercase tracking-wide pt-2">1. Information We Collect</h4>
-              <p><strong className="text-white/70">You provide:</strong> Account info (username, email, securely stored password), profile info (avatar, banner, status), payment info (processed by Stripe — we never see your card number), user content (messages, images, files), and communication preferences.</p>
-              <p><strong className="text-white/70">Automatically:</strong> Usage data (features used, activity timestamps — not for ads), device/connection data (IP for security/rate limiting), and error reports via Sentry (opt-in only).</p>
+              <p><strong className="text-white/70">You provide:</strong> Account info (username, email, securely stored password), profile info (avatar, banner, status), payment info (processed by Stripe; we never see your card number), user content (messages, images, files), and communication preferences.</p>
+              <p><strong className="text-white/70">Automatically:</strong> Usage data (features used, activity timestamps; not for ads), device/connection data (IP for security/rate limiting), and error reports via Sentry (opt-in only).</p>
 
               <h4 className="text-white font-bold text-xs uppercase tracking-wide pt-2">2. How We Use It</h4>
               <p>Provide and improve the Service, ensure safety and security, process payments, and communicate service notices. We do not sell your data or use it for targeted advertising.</p>
@@ -1291,7 +1291,7 @@ export const Login: React.FC<LoginProps> = ({ onAuthSuccess }) => {
               <p>With other users (profile, messages), service providers (Stripe, Sentry, AWS, Cloudflare, LiveKit), legal obligations, and safety emergencies. We do not sell or rent your data.</p>
 
               <h4 className="text-white font-bold text-xs uppercase tracking-wide pt-2">4. Encryption</h4>
-              <p>Direct messages are end-to-end encrypted. We cannot read the content of your DMs — only ciphertext is stored on our servers.</p>
+              <p>Direct messages are end-to-end encrypted. We cannot read the content of your DMs. Only ciphertext is stored on our servers.</p>
 
               <h4 className="text-white font-bold text-xs uppercase tracking-wide pt-2">5. Data Retention</h4>
               <p>Account data is kept while active. Server messages follow each server's retention settings. When you delete your account, profile data is permanently removed and messages are anonymized.</p>

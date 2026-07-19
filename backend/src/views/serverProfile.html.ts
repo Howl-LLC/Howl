@@ -162,7 +162,7 @@ export function renderServerProfileHtml(vm: ServerProfileViewModel): string {
   const descSafe = vm.description ? truncate(vm.description, 200) : 'Join this Howl community.';
   const ogTitle = escapeHtmlAttr(titleSafe);
   const ogDescription = escapeHtmlAttr(descSafe);
-  const titleText = escapeHtmlText(`${titleSafe} — Howl`);
+  const titleText = escapeHtmlText(`${titleSafe} · Howl`);
   const canonicalUrl = `https://app.howlpro.com/s/${encodeURIComponent(vm.vanity)}`;
   const ogUrl = escapeHtmlAttr(canonicalUrl);
 
@@ -225,7 +225,7 @@ export function renderServerProfileHtml(vm: ServerProfileViewModel): string {
  * Render the SSR HTML for `/s/:vanity` 404. Same shell, no per-server data.
  */
 export function renderServerProfileNotFoundHtml(): string {
-  const fallbackTitle = 'Server not found — Howl';
+  const fallbackTitle = 'Server not found · Howl';
   const fallbackDesc = 'This Howl community could not be found. It may be private, suspended, or the link may be invalid.';
   const titleAttr = escapeHtmlAttr(fallbackTitle);
   const descAttr = escapeHtmlAttr(fallbackDesc);

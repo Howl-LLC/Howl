@@ -335,7 +335,7 @@ export const ThreadPanel: React.FC<ThreadPanelProps> = ({
             paddingBottom: isMobile ? 'calc(0.75rem + env(safe-area-inset-bottom))' : undefined,
           }}
         >
-          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('threads.archived')} — {t('threads.unarchiveThread')}</span>
+          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('threads.archived')} · {t('threads.unarchiveThread')}</span>
         </div>
       )}
     </div>

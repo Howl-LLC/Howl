@@ -118,7 +118,7 @@ const ROLE_PERMISSION_GROUPS: RolePermissionGroup[] = [
   {
     title: 'Elevated',
     permissions: [
-      { id: 'administrator', label: 'Administrator', description: 'Unrestricted access. Grants every permission above — read history, manage channels, manage roles, moderate, everything. Assign with caution.' },
+      { id: 'administrator', label: 'Administrator', description: 'Unrestricted access. Grants every permission above: read history, manage channels, manage roles, moderate, everything. Assign with caution.' },
     ],
   },
 ];
@@ -415,7 +415,7 @@ export const RolesSection: React.FC<RolesSectionProps> = ({
               <div className="space-y-2">
                 <p className="text-[11px] text-t-tertiary">
                   {t('serverSettings.rolesHierarchyHint', {
-                    defaultValue: 'Drag to reorder. Roles higher in this list outrank roles below them — they decide member colors, hoisted sections in the member list, and who can manage whom.',
+                    defaultValue: 'Drag to reorder. Roles higher in this list outrank roles below them. They decide member colors, hoisted sections in the member list, and who can manage whom.',
                   })}
                 </p>
                 {roles2.map((r) => {
@@ -635,7 +635,7 @@ export const RolesSection: React.FC<RolesSectionProps> = ({
             {/* Current members in this role */}
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-t-secondary">
-                {t('serverSettings.membersInRole')} — {roleMembersInRole.length}
+                {t('serverSettings.membersInRole')} · {roleMembersInRole.length}
               </p>
               {filteredRoleMembers.length === 0 ? (
                 <Card>

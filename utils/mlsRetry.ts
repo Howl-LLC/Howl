@@ -40,7 +40,7 @@ export function describeSendBlock(dmChannelId: string, err: unknown): unknown {
     : (ch?.otherUser?.username ?? 'this user');
   const mapped = new Error(
     failure.reason === 'key-change-blocked'
-      ? `${name}'s security key changed — review it to continue`
+      ? `${name}'s security key changed. Review it to continue`
       : `Waiting for ${name} to enable encryption`,
   );
   (mapped as Error & { __expected?: boolean }).__expected = true;

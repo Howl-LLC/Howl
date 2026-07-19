@@ -802,7 +802,7 @@ router.post('/:serverId/roles/:roleId/members', validateUuidParams('serverId', '
   if (!targetUserId) return res.status(400).json({ error: 'userId is required' });
   const role = await prisma.serverRole.findFirst({ where: { id: roleId, serverId } });
   if (!role) return res.status(404).json({ error: 'Role not found' });
-  if (role.isEveryone) return res.status(400).json({ error: '@everyone is implicit — cannot assign or remove' });
+  if (role.isEveryone) return res.status(400).json({ error: '@everyone is implicit; cannot assign or remove' });
   // Locked roles (Owner, @everyone) are system-managed and must never be
   // granted via role assignment; ownership moves only through
   // transfer-ownership, the single authoritative path.
@@ -927,7 +927,7 @@ router.delete('/:serverId/roles/:roleId/members/:userId', validateUuidParams('se
   if (!hasPermission(actorCtx, 'manageRoles')) return res.status(403).json({ error: 'You need the Manage Roles permission' });
   const targetRole = await prisma.serverRole.findFirst({ where: { id: roleId, serverId } });
   if (!targetRole) return res.status(404).json({ error: 'Role not found' });
-  if (targetRole.isEveryone) return res.status(400).json({ error: '@everyone is implicit — cannot remove' });
+  if (targetRole.isEveryone) return res.status(400).json({ error: '@everyone is implicit; cannot remove' });
   // Locked roles are system-managed. Blocking removal here keeps the invariant
   // that the owner always holds the Owner MemberRole (so their administrator
   // permission and display badge never drift), matching the assign-side block.

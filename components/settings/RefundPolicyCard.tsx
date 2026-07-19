@@ -104,7 +104,7 @@ export const RefundPolicyCard: React.FC = () => {
           const result = data[cat.key];
           const state = categoryDisplayState(result, data.hasUsed[cat.key]);
           const tooltip = state === 'available'
-            ? t('billing.refund.tooltip.available', 'Available — click "Request Refund" in the relevant tab.')
+            ? t('billing.refund.tooltip.available', 'Available. Click "Request Refund" in the relevant tab.')
             : refundReasonToTooltip(result.reason, t);
           const badgeClass = state === 'available'
             ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
@@ -127,7 +127,7 @@ export const RefundPolicyCard: React.FC = () => {
                 {state === 'na' && <Minus size={12} />}
                 {state === 'available' && t('billing.refund.statusAvailable', 'Available')}
                 {state === 'used' && t('billing.refund.statusUsed', 'Used')}
-                {state === 'na' && '—'}
+                {state === 'na' && '–'}
               </div>
             </div>
           );

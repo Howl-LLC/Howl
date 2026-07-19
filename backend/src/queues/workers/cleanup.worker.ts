@@ -1012,7 +1012,7 @@ export async function sweepImageHashes(): Promise<{ scanned: number; matched: nu
                 authorRegisteredAtSnapshot: authorSnapshot?.createdAt ?? null,
                 sha256: row.sha256,
                 preservedAt: new Date(),
-                content: '[auto-flagged upload — retroactive sweep]',
+                content: '[auto-flagged upload, retroactive sweep]',
                 attachmentUrl: `/api/uploads/${row.filename}`,
                 reason: 'csam',
                 details: `PDQ hash match: ${row.hash} (retroactive sweep)`,

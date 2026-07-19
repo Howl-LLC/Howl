@@ -469,7 +469,7 @@ const ApplicationCard: React.FC<ApplicationCardProps> = ({ app, questions, onDec
                   <p className="text-[11px] font-semibold text-t-secondary mb-0.5">
                     {q?.prompt ?? t('applications.unknownQuestion', { defaultValue: '(question removed)' })}
                   </p>
-                  <p className="text-sm text-t-primary whitespace-pre-wrap break-words">{a.value || '—'}</p>
+                  <p className="text-sm text-t-primary whitespace-pre-wrap break-words">{a.value || '–'}</p>
                 </div>
               );
             })}
@@ -500,7 +500,7 @@ const ApplicationCard: React.FC<ApplicationCardProps> = ({ app, questions, onDec
                     onChange={(e) => setInternalNote(e.target.value.slice(0, 1000))}
                     rows={2}
                     maxLength={1000}
-                    placeholder={t('applications.internalNotePlaceholder', { defaultValue: 'Notes for your mod team — never sent to the applicant…' })}
+                    placeholder={t('applications.internalNotePlaceholder', { defaultValue: 'Notes for your mod team, never sent to the applicant…' })}
                     className="w-full rounded-lg px-3 py-2 text-sm border border-default outline-none focus:ring-2 focus:ring-[var(--cyan-accent)]/40 transition-all resize-none bg-app-surface text-t-primary"
                   />
                   <p className="text-[10px] text-t-tertiary">

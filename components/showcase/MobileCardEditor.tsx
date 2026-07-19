@@ -168,7 +168,7 @@ export const MobileCardEditor: React.FC<MobileCardEditorProps> = ({
                       </div>
                       <span className="flex-1 truncate">
                         {s.seasonName || `S${s.seasonId}`}{isCurrent ? ' · NOW' : ''}: {s.rankName || 'Unranked'}
-                        {s.seasonFullName ? ` — ${s.seasonFullName}` : ''}
+                        {s.seasonFullName ? ` · ${s.seasonFullName}` : ''}
                       </span>
                     </button>
                   );

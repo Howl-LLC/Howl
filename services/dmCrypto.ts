@@ -217,7 +217,7 @@ export function decryptChannelKeyFromDelivery(
     fromBase64(senderPublicKey),
     recipientSecretKey,
   );
-  if (!decrypted) throw new Error('Failed to decrypt channel key — invalid sender or corrupted data');
+  if (!decrypted) throw new Error('Failed to decrypt channel key: invalid sender or corrupted data');
   return decrypted;
 }
 

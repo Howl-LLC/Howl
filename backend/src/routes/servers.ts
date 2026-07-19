@@ -1805,7 +1805,7 @@ router.post('/:serverId/channels', validateUuidParams('serverId'), authenticateT
           channelId: channel.id,
           serverId: channel.serverId,
           heroTitle: 'Pick the roles that fit you',
-          heroDescription: 'Roles control how you appear in the member list and which announcements ping you. Toggle any time — your changes apply instantly.',
+          heroDescription: 'Roles control how you appear in the member list and which announcements ping you. Toggle any time. Your changes apply instantly.',
         },
       });
     } catch (e) {

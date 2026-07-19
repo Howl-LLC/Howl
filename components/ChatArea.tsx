@@ -703,7 +703,7 @@ function TextFileEmbed({ attachmentUrl, attachmentName, getToken, encryptedFileK
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-semibold truncate text-t-primary">{attachmentName}</div>
-            <div className="text-[11px] mt-0.5 text-t-secondary">{formatSize(fileSize)} — {lineCount} {lineCount === 1 ? 'line' : 'lines'}</div>
+            <div className="text-[11px] mt-0.5 text-t-secondary">{formatSize(fileSize)} · {lineCount} {lineCount === 1 ? 'line' : 'lines'}</div>
           </div>
           <div className="flex gap-0.5 shrink-0">
             <button type="button" onClick={() => setWordWrap(w => !w)} className={`w-7 h-7 rounded-md flex items-center justify-center hover:bg-fill-hover transition-colors ${wordWrap ? '' : 'bg-fill-hover'}`} title={wordWrap ? t('common.nowrap', 'Disable word wrap') : t('common.wordWrap', 'Enable word wrap')}>
@@ -753,7 +753,7 @@ function TextFileEmbed({ attachmentUrl, attachmentName, getToken, encryptedFileK
                 <FileText size={18} className="text-t-accent" />
                 <div>
                   <div className="text-sm font-semibold text-t-primary">{attachmentName}</div>
-                  <div className="text-[11px] text-t-secondary">{formatSize(fileSize)} — {lineCount} lines</div>
+                  <div className="text-[11px] text-t-secondary">{formatSize(fileSize)} · {lineCount} lines</div>
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -2140,7 +2140,7 @@ export const ChatArea: React.FC<ChatAreaProps> = React.memo(({ channel, onSendMe
         : null;
       const callText = isMissed
         ? (isFromMe
-            ? t('chat.callNoAnswer', 'You called — no answer.')
+            ? t('chat.callNoAnswer', 'You called. No answer.')
             : (sysNameEl ? <>{t('chat.missedCallFrom', { author: '' }).replace(/^\s+/, '')}</> : t('chat.missedCallFrom', { author: authorName })))
         : isEnded
           ? (durSec != null && durSec > 0 ? t('chat.callEndedDuration', { duration: fmtDur(durSec) }) : t('chat.callEnded'))

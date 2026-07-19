@@ -966,7 +966,7 @@ export const VoiceChannel: React.FC<VoiceChannelProps> = ({
           </span>
         )}
         {isE2eeFailed && (
-          <span className="flex items-center gap-1 px-2 py-1 text-amber-400" title={t('voiceCall.e2eeFailed', 'Not end-to-end encrypted — key exchange failed')}>
+          <span className="flex items-center gap-1 px-2 py-1 text-amber-400" title={t('voiceCall.e2eeFailed', 'Not end-to-end encrypted. Key exchange failed')}>
             <ShieldAlert size={14} />
           </span>
         )}
@@ -985,7 +985,7 @@ export const VoiceChannel: React.FC<VoiceChannelProps> = ({
             aria-label={t('voice.screenShareDesktopOnly', 'Screen sharing requires desktop')}
           >
             <MonitorUp size={14} />
-            {t('voice.screenShareDesktopOnlyShort', 'Share — desktop only')}
+            {t('voice.screenShareDesktopOnlyShort', 'Share (desktop only)')}
           </button>
         )}
         <CallControlBar

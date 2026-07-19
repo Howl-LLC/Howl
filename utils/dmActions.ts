@@ -224,7 +224,7 @@ export async function sendDmMessage(
       // A mapped error names the actual block (who to wait on / whose key to review);
       // keep the generic still-loading copy only for genuinely-unmapped not-ready errors.
       const mapped = surfaced instanceof Error && !surfaced.message.includes('Encryption unavailable');
-      opts.showToast(mapped ? (surfaced as Error).message : 'Encryption is still loading — try again in a moment.', 'warning');
+      opts.showToast(mapped ? (surfaced as Error).message : 'Encryption is still loading. Try again in a moment.', 'warning');
       return;
     }
     const isRateLimit = !!(err && ((err as any).isRateLimit || (err instanceof Error && err.message.toLowerCase().includes('rate limit'))));

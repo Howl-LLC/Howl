@@ -63,7 +63,7 @@ export const RecoveryKeyModal: React.FC<RecoveryKeyModalProps> = ({ recoveryKey,
               Your encryption passphrase is your account password
             </p>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
-              Whenever Howl asks for your encryption passphrase — on a new device, after clearing browser data, or in Settings — enter the same password you use to log in.
+              Whenever Howl asks for your encryption passphrase (on a new device, after clearing browser data, or in Settings), enter the same password you use to log in.
             </p>
           </div>
         )}

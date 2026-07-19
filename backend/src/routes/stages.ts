@@ -400,7 +400,7 @@ router.post(
         data: memberIds.map(uid => ({
           userId: uid, serverId, channelId, type: 'stage_started',
           title: 'Stage started',
-          body: session.topic ? `${session.topic} — ${channelName}` : channelName,
+          body: session.topic ? `${session.topic} · ${channelName}` : channelName,
           metadata: { stageSessionId: session.id, channelName },
         })),
         skipDuplicates: true,

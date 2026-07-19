@@ -822,9 +822,9 @@ function FeaturesSection() {
       visual: (
         <div style={{ position: 'relative' }}>
           <ScreenshotCarousel images={[
-            { name: 'appearance-1', alt: 'Howl Appearance — Preview & Theme' },
-            { name: 'appearance-2', alt: 'Howl Appearance — Layout & Colors' },
-            { name: 'appearance-3', alt: 'Howl Appearance — Density & Scaling' },
+            { name: 'appearance-1', alt: 'Howl Appearance: Preview & Theme' },
+            { name: 'appearance-2', alt: 'Howl Appearance: Layout & Colors' },
+            { name: 'appearance-3', alt: 'Howl Appearance: Density & Scaling' },
           ]} tilt="rotateY(8deg) rotateX(3deg)" />
           <LockedSticker src={asset('painter-roo.webp')} alt="Painter Roo" desktop={{ x: 966, y: -104, w: 376, rot: 0 }} mobile={{ x: 97, y: -542, w: 388, rot: 0 }} aspect={2048 / 2732} />
         </div>
@@ -1243,7 +1243,7 @@ export function LandingPage() {
 
   const openLightbox = useCallback<OpenLightbox>((src, alt = '') => setLightbox({ src, alt }), []);
 
-  useEffect(() => { document.title = 'Howl — Talk freely. Stay private.'; }, []);
+  useEffect(() => { document.title = 'Howl: Talk freely. Stay private.'; }, []);
 
   // Escape closes the lightbox
   useEffect(() => {

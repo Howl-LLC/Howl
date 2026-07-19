@@ -156,7 +156,7 @@ SocketService.prototype.joinVoiceChannel = function(this: SocketService, channel
       // backend hasn't committed the membership row yet, the HTTP
       // /livekit/token fallback gets 403, room.connect() fails, and
       // RoomEvent.Disconnected fires. Loud, retriable failure is correct.
-      reject(new Error('Join request timed out — please try again.'));
+      reject(new Error('Join request timed out. Please try again.'));
     }, 15000);
     sock.emit('join-voice-channel', { channelId, username, avatar, banner, joinBlob: signed?.blob, signature: signed?.signature }, (response?: { ok: boolean; error?: string; token?: string; url?: string }) => {
       if (settled) return;

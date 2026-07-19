@@ -87,7 +87,7 @@ export async function sendDeviceVerificationEmail(
           <p style="color: #94a3b8; font-size: 13px; margin: 0 0 4px;"><strong style="color: #f1f5f9;">Device:</strong> ${escapeHtml(params.deviceLabel)}</p>
           <p style="color: #94a3b8; font-size: 13px; margin: 0;"><strong style="color: #f1f5f9;">IP:</strong> ${escapeHtml(params.ipMasked)}</p>
         </div>
-        <p style="color: #f87171; font-size: 13px; margin: 24px 0 0;">If this wasn't you, change your password immediately — someone may know it.</p>
+        <p style="color: #f87171; font-size: 13px; margin: 24px 0 0;">If this wasn't you, change your password immediately. Someone may know it.</p>
         <p style="color: #64748b; font-size: 12px; margin: 16px 0 0;">This code expires in 10 minutes.</p>
   `));
 }
@@ -311,7 +311,7 @@ export async function sendUsernameResetRequiredEmail(
     : 'Your previous username contained characters that are no longer accepted and has been changed automatically.';
   await sendEmail(to, 'Howl - Your username was changed', emailWrapper(`
         <h2 style="color: #f1f5f9; font-size: 20px; margin: 0 0 8px;">Your username was changed</h2>
-        <p style="color: #94a3b8; font-size: 14px; margin: 0 0 16px;">${escapeHtml(explanation)} Your account is unaffected — your messages, friends, and servers are still there.</p>
+        <p style="color: #94a3b8; font-size: 14px; margin: 0 0 16px;">${escapeHtml(explanation)} Your account is unaffected. Your messages, friends, and servers are still there.</p>
         <div style="background: #1e293b; border-radius: 12px; padding: 12px 16px; display: inline-block;">
           <span style="color: #94a3b8; font-size: 13px; margin-right: 8px;">Old:</span>
           <span style="color: #f87171; font-size: 14px; font-family: monospace; text-decoration: line-through;">${escapeHtml(params.oldUsername)}</span>

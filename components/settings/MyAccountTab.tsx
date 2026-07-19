@@ -636,7 +636,7 @@ const MyAccountTab: React.FC<MyAccountTabProps> = ({
                       className="w-full rounded-xl px-4 py-2.5 text-sm border outline-none focus:ring-2 focus:ring-[var(--cyan-accent)]/40 transition-all bg-input-surface border-default text-t-primary"
                     />
                     <p className="text-[10px] mt-1.5 text-t-secondary">
-                      {profileNickname.length}/32 — {t('settings.leaveEmptyForGlobal')}
+                      {profileNickname.length}/32 · {t('settings.leaveEmptyForGlobal')}
                     </p>
                   </div>
 

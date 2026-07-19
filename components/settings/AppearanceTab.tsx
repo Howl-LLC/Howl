@@ -460,7 +460,7 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
               >
                 <Upload size={20} className="text-t-secondary" />
                 <span className="text-[11px] font-bold uppercase tracking-wider text-t-secondary">{t('settings.appearance.uploadBgImage')}</span>
-                <span className="text-[10px] text-t-secondary" style={{ opacity: 0.6 }}>{formatLabel} — max 10 MB</span>
+                <span className="text-[10px] text-t-secondary" style={{ opacity: 0.6 }}>{formatLabel} · max 10 MB</span>
               </button>
             )}
             <input ref={bgInputRef} type="file" accept={acceptFormats} className="hidden" onChange={handleBgUpload} />

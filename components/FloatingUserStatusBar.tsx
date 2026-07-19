@@ -1029,7 +1029,7 @@ export const FloatingUserStatusBar: React.FC<FloatingUserStatusBarProps> = React
                         {/* Latency */}
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-semibold text-t-secondary">{t('statusBar.latency', 'Latency')}</span>
-                          <span className="text-[11px] font-bold tabular-nums text-t-primary">{latency !== null ? `${latency}ms` : '—'}</span>
+                          <span className="text-[11px] font-bold tabular-nums text-t-primary">{latency !== null ? `${latency}ms` : '–'}</span>
                         </div>
                         {/* Server region */}
                         {regionLabel && (
@@ -1322,7 +1322,7 @@ export const FloatingUserStatusBar: React.FC<FloatingUserStatusBarProps> = React
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-semibold text-t-secondary">{t('statusBar.latency', 'Latency')}</span>
-                        <span className="text-[11px] font-bold tabular-nums text-t-primary">{latency !== null ? `${latency}ms` : '—'}</span>
+                        <span className="text-[11px] font-bold tabular-nums text-t-primary">{latency !== null ? `${latency}ms` : '–'}</span>
                       </div>
                       {regionLabel && (
                         <div className="flex items-center justify-between">

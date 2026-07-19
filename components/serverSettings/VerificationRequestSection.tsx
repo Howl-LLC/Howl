@@ -77,7 +77,7 @@ export const VerificationRequestSection: React.FC<VerificationRequestSectionProp
       if (status === 429) {
         showToast(
           t('verificationSection.cooldown', {
-            defaultValue: 'You can\'t resubmit yet — wait for the cooldown to end.',
+            defaultValue: 'You can\'t resubmit yet. Wait for the cooldown to end.',
           }),
           'error',
         );
@@ -170,7 +170,7 @@ export const VerificationRequestSection: React.FC<VerificationRequestSectionProp
       </div>
       <p className="text-[12px] text-t-secondary mb-4">
         {t('verificationSection.headerDesc', {
-          defaultValue: 'For official organizations and brands. Howl admins manually review every request — we visit your website and check your public presence before approving.',
+          defaultValue: 'For official organizations and brands. Howl admins manually review every request. We visit your website and check your public presence before approving.',
         })}
       </p>
 

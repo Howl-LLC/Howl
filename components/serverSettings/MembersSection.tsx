@@ -59,7 +59,7 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
   // Helpers
 
   const formatRelative = (d: string | Date | undefined) => {
-    if (!d) return '—';
+    if (!d) return '–';
     const date = typeof d === 'string' ? new Date(d) : d;
     const now = new Date();
     const diff = now.getTime() - date.getTime();

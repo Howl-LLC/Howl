@@ -181,7 +181,7 @@ router.post(
       ]);
       const channelType = data.channel.type ?? 'GuildTextChannel';
       if (!IMPORTABLE_CHANNEL_TYPES.has(channelType)) {
-        return res.status(400).json({ error: `Cannot import ${channelType} — only text channels can be imported.` });
+        return res.status(400).json({ error: `Cannot import ${channelType}. Only text channels can be imported.` });
       }
 
       const channelName = data.channel.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-').slice(0, 100);

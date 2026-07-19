@@ -295,7 +295,7 @@ function TwitchStreamEmbed({ channel, href, linkKey }: { channel: string; href: 
       <div className="mt-1.5 rounded-lg w-full max-w-[520px] aspect-video overflow-hidden border" style={{ borderColor: 'rgba(145,70,255,0.15)' }}>
         <LazyIframe
           src={`https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(parent)}&muted=true&autoplay=false`}
-          title={`Twitch stream — ${channel}`}
+          title={`Twitch stream: ${channel}`}
           className="w-full h-full"
           frameBorder={0}
           sandbox="allow-scripts allow-same-origin allow-popups"
@@ -523,7 +523,7 @@ function KickStreamEmbed({ channel, href, linkKey }: { channel: string; href: st
       <div className="mt-1.5 rounded-lg w-full max-w-[520px] aspect-video overflow-hidden border" style={{ borderColor: 'rgba(83,252,24,0.15)' }}>
         <LazyIframe
           src={`https://player.kick.com/${encodeURIComponent(channel)}?muted=true&autoplay=false`}
-          title={`Kick stream — ${channel}`}
+          title={`Kick stream: ${channel}`}
           className="w-full h-full"
           frameBorder={0}
           allow="autoplay; encrypted-media; picture-in-picture"

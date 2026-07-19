@@ -296,7 +296,7 @@ const DmChannelItemContent = React.memo(function DmChannelItemContent({
             )}
             <span className="text-[9px] font-medium truncate text-t-secondary opacity-80">
               {dm.otherUser.activity.type === 'spotify' && dm.otherUser.activity.details
-                ? <>{dm.otherUser.activity.details} — {dm.otherUser.activity.name}</>
+                ? <>{dm.otherUser.activity.details} · {dm.otherUser.activity.name}</>
                 : dm.otherUser.activity.name}
             </span>
           </div>
@@ -849,7 +849,7 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
     (mlsLockedForActive
       ? t('encryption.mlsLockedComposer', 'Secure messaging is locked')
       : keyChangeBlockedForActive
-        ? t('encryption.keyChangeComposer', { name: unprovisionedName, defaultValue: "{{name}}'s security key changed — review it to continue" })
+        ? t('encryption.keyChangeComposer', { name: unprovisionedName, defaultValue: "{{name}}'s security key changed. Review it to continue" })
         : peerUnprovisioned
           ? t('encryption.peerUnprovisionedComposer', { name: unprovisionedName, defaultValue: 'Waiting for {{name}} to enable encryption' })
           : null);
@@ -1806,7 +1806,7 @@ export const DMView: React.FC<DMViewProps> = React.memo(({
               composerPlaceholder={composerPlaceholder}
               callBlockedReason={
                 keyChangeBlockedForActive
-                  ? t('encryption.keyChangeComposer', { name: unprovisionedName, defaultValue: "{{name}}'s security key changed — review it to continue" })
+                  ? t('encryption.keyChangeComposer', { name: unprovisionedName, defaultValue: "{{name}}'s security key changed. Review it to continue" })
                   : peerUnprovisioned
                     ? t('voiceCall.peerUnprovisioned', { name: unprovisionedName, defaultValue: 'Waiting for {{name}} to enable encryption' })
                     : null

@@ -598,10 +598,10 @@ export const LinkedAppsTab: React.FC = () => {
                     </p>
                     <div className="space-y-2">
                       {[
-                        { icon: Music, text: t('settings.linkedApps.spotifyTopArtistsInfo', { defaultValue: 'Top Artists & Tracks — Visible on your profile' }) },
-                        { icon: Clock, text: t('settings.linkedApps.spotifyRecentInfo', { defaultValue: 'Recently Played — Shown in activity history' }) },
-                        { icon: Headphones, text: t('settings.linkedApps.spotifyListenAlongInfo', { defaultValue: 'Listen Along — Friends can open your tracks' }) },
-                        { icon: Users, text: t('settings.linkedApps.spotifySharedTastesInfo', { defaultValue: 'Shared Tastes — Compare music with friends' }) },
+                        { icon: Music, text: t('settings.linkedApps.spotifyTopArtistsInfo', { defaultValue: 'Top Artists & Tracks: Visible on your profile' }) },
+                        { icon: Clock, text: t('settings.linkedApps.spotifyRecentInfo', { defaultValue: 'Recently Played: Shown in activity history' }) },
+                        { icon: Headphones, text: t('settings.linkedApps.spotifyListenAlongInfo', { defaultValue: 'Listen Along: Friends can open your tracks' }) },
+                        { icon: Users, text: t('settings.linkedApps.spotifySharedTastesInfo', { defaultValue: 'Shared Tastes: Compare music with friends' }) },
                       ].map(({ icon: Icon, text }) => (
                         <div key={text} className="flex items-center gap-2.5 px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--fill-hover)' }}>
                           <Icon size={13} style={{ color: '#1DB954', opacity: 0.7 }} />

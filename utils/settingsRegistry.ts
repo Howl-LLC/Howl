@@ -1612,7 +1612,7 @@ export const SETTINGS_REGISTRY: SettingEntry[] = [
     labelKey: 'dm.encryption.unlockOnLogin',
     label: 'Show unlock prompt at login',
     descriptionKey: 'dm.encryption.unlockOnLogin',
-    description: 'Choose where the unlock prompt appears — as a modal at login, or inline above the DM column.',
+    description: 'Choose where the unlock prompt appears: as a modal at login, or inline above the DM column.',
     type: 'toggle',
     keywords: ['encryption', 'unlock', 'login', 'convenience', 'prompt', 'modal', 'inline', 'where'],
   },

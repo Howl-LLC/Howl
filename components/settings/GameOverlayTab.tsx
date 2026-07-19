@@ -173,7 +173,7 @@ export const GameOverlayTab: React.FC<GameOverlayTabProps> = () => {
                 className="btn-cta inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-not-allowed"
                 aria-disabled="true"
               >
-                {t('settings.overlay.downloadComingSoon', 'macOS app — Coming soon')}
+                {t('settings.overlay.downloadComingSoon', 'macOS app: Coming soon')}
               </span>
             );
           })()}

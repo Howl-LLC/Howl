@@ -1123,12 +1123,12 @@ export const DMCallView: React.FC<DMCallViewProps> = ({
         </span>
       )}
       {isE2eeEstablishing && (
-        <span className="flex items-center gap-1 text-amber-400 mr-1" title={t('voiceCall.e2eeEstablishing', 'Establishing end-to-end encryption — waiting for the other side to confirm')}>
+        <span className="flex items-center gap-1 text-amber-400 mr-1" title={t('voiceCall.e2eeEstablishing', 'Establishing end-to-end encryption. Waiting for the other side to confirm')}>
           <ShieldEllipsis size={14} />
         </span>
       )}
       {isE2eeFailed && (
-        <span className="flex items-center gap-1 text-amber-400 mr-1" title={t('voiceCall.e2eeFailed', 'Not end-to-end encrypted — key exchange failed')}>
+        <span className="flex items-center gap-1 text-amber-400 mr-1" title={t('voiceCall.e2eeFailed', 'Not end-to-end encrypted. Key exchange failed')}>
           <ShieldAlert size={14} />
         </span>
       )}

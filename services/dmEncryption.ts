@@ -213,7 +213,7 @@ export async function encryptDMContent(
   // silent downgrade).
   if (isChannelMls(dmChannelId)) {
     if (!mlsCoordinator.isReadyForChannel(dmChannelId, tier)) {
-      throw new Error('Encryption unavailable — unlock encryption to send messages.');
+      throw new Error('Encryption unavailable. Unlock encryption to send messages.');
     }
     const content = await mlsCoordinator.encrypt(dmChannelId, plaintext, tier);
     return { content, encrypted: true };
@@ -221,7 +221,7 @@ export async function encryptDMContent(
 
   // No rung below MLS. A channel not classified 'mls' (or not ready)
   // fails closed; there is no legacy AES path.
-  throw new Error('Encryption unavailable — unlock encryption to send messages.');
+  throw new Error('Encryption unavailable. Unlock encryption to send messages.');
 }
 
 export async function decryptDMContent(
@@ -396,7 +396,7 @@ export async function encryptAndUploadFile(
   thumbHeight?: number;
 }> {
   if (!dmKeyManager.isUnlocked()) {
-    throw new Error('Encryption unavailable — unlock encryption to upload files.');
+    throw new Error('Encryption unavailable. Unlock encryption to upload files.');
   }
 
   const { generateFileKey, encryptFile, generateThumbnail, fileKeyToBase64 } = await import('./fileCrypto');

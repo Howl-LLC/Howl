@@ -571,7 +571,7 @@ export function RankTimelineCard({ card, account, accent }: { card: ShowcaseCard
           {gameName} · Rank Timeline
         </span>
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-[10px]" style={{ color: 'var(--t-tertiary)' }}>No season data — refresh stats</p>
+          <p className="text-[10px]" style={{ color: 'var(--t-tertiary)' }}>No season data. Refresh stats</p>
         </div>
       </>
     );
@@ -718,7 +718,7 @@ export function CustomTextCard({ card }: { card: ShowcaseCard }) {
 // Platform Profile Cards
 
 function formatCount(n: number | null | undefined) {
-  if (n == null) return '—';
+  if (n == null) return '–';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString();

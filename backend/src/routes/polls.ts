@@ -467,7 +467,7 @@ router.patch(
             channelId: poll.channelId ?? undefined,
             type: 'poll_ended',
             title: 'Poll ended',
-            body: `"${updated.question}" — Winner: ${winnerText}`,
+            body: `"${updated.question}" · Winner: ${winnerText}`,
             metadata: { pollId, channelName: undefined, question: updated.question },
           })),
         }).catch(() => {});
@@ -477,7 +477,7 @@ router.patch(
             io.to(`user:${uid}`).emit('notification-created', {
               serverId: poll.serverId, channelId: poll.channelId,
               type: 'poll_ended', title: 'Poll ended',
-              body: `"${updated.question}" — Winner: ${winnerText}`,
+              body: `"${updated.question}" · Winner: ${winnerText}`,
               metadata: { pollId }, createdAt: new Date().toISOString(),
             });
           }

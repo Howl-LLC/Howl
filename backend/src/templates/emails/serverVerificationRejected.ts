@@ -26,7 +26,7 @@ export function serverVerificationRejected(params: ServerVerificationRejectedPar
         <p style="color: #94a3b8; font-size: 14px; margin: 0 0 16px;">Hi ${escapeHtml(params.ownerName)},</p>
         <p style="color: #94a3b8; font-size: 14px; margin: 0 0 16px;">Thanks for applying for the Verified by Howl badge for <strong style="color: #f1f5f9;">${escapeHtml(params.serverName)}</strong>. After review, we weren't able to verify the application this time.</p>
         ${noteBlock}
-        <p style="color: #64748b; font-size: 12px; margin: 24px 0 0;">You can submit a new application in ${params.cooldownDays} day${params.cooldownDays === 1 ? '' : 's'}. Verification is reserved for official organizations and brands — make sure your website clearly shows ownership of the community before re-applying.</p>
+        <p style="color: #64748b; font-size: 12px; margin: 24px 0 0;">You can submit a new application in ${params.cooldownDays} day${params.cooldownDays === 1 ? '' : 's'}. Verification is reserved for official organizations and brands. Make sure your website clearly shows ownership of the community before re-applying.</p>
   `);
   return { subject, html, text: htmlToText(html) };
 }

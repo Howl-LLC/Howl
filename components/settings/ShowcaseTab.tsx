@@ -556,7 +556,7 @@ export const ShowcaseTab: React.FC<ShowcaseTabProps> = ({ userId }) => {
                     >
                       {GAME_ICON_MAP[game] && React.createElement(GAME_ICON_MAP[game], { size: 12 })}
                       <span className="font-semibold text-t-primary">{t('showcase.rank', { defaultValue: 'Rank' })}</span>
-                      <span className="text-t-secondary">— {GAME_NAMES[game] || game}</span>
+                      <span className="text-t-secondary">· {GAME_NAMES[game] || game}</span>
                     </button>
                     <button type="button"
                       onClick={() => addCard('game_stats', game, '2x1')}
@@ -564,7 +564,7 @@ export const ShowcaseTab: React.FC<ShowcaseTabProps> = ({ userId }) => {
                     >
                       {GAME_ICON_MAP[game] && React.createElement(GAME_ICON_MAP[game], { size: 12 })}
                       <span className="font-semibold text-t-primary">{t('showcase.stats', { defaultValue: 'Stats' })}</span>
-                      <span className="text-t-secondary">— {GAME_NAMES[game] || game}</span>
+                      <span className="text-t-secondary">· {GAME_NAMES[game] || game}</span>
                     </button>
                     {(game === 'r6_siege' || game === 'marvel_rivals') && (
                       <button type="button"
@@ -573,7 +573,7 @@ export const ShowcaseTab: React.FC<ShowcaseTabProps> = ({ userId }) => {
                       >
                         {GAME_ICON_MAP[game] && React.createElement(GAME_ICON_MAP[game], { size: 12 })}
                         <span className="font-semibold text-t-primary">{t('showcase.timeline', { defaultValue: 'Timeline' })}</span>
-                        <span className="text-t-secondary">— {GAME_NAMES[game] || game}</span>
+                        <span className="text-t-secondary">· {GAME_NAMES[game] || game}</span>
                       </button>
                     )}
                   </React.Fragment>
@@ -845,7 +845,7 @@ export const ShowcaseTab: React.FC<ShowcaseTabProps> = ({ userId }) => {
                           <Dropdown
                             options={[
                               { value: 0, label: t('showcase.allGamesList', { defaultValue: 'All games (list)' }) },
-                              ...steamPlaytime.map(g => ({ value: g.appId, label: `${g.name} — ${g.hours.toLocaleString()}h`, icon: g.iconUrl ?? undefined })),
+                              ...steamPlaytime.map(g => ({ value: g.appId, label: `${g.name} · ${g.hours.toLocaleString()}h`, icon: g.iconUrl ?? undefined })),
                             ]}
                             value={(card.config?.selectedAppId as number) || 0}
                             onChange={(v) => updateCardConfig(card.id, { selectedAppId: v || undefined })}
@@ -1025,7 +1025,7 @@ export const ShowcaseTab: React.FC<ShowcaseTabProps> = ({ userId }) => {
                         <span className="text-red-400 ml-1 break-words">
                           ({a.fetchError})
                           {a.errorTransient
-                            ? <span className="text-amber-400 ml-1">· Provider issues — retry later</span>
+                            ? <span className="text-amber-400 ml-1">· Provider issues, retry later</span>
                             : (a.errorRetryCount ?? 0) < 5
                               ? <span className="text-amber-400 ml-1">· Retry {a.errorRetryCount ?? 0}/5</span>
                               : <span className="text-red-500 ml-1">· Retries exhausted</span>

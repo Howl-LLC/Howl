@@ -107,7 +107,7 @@ export const DownloadAppBanner: React.FC = () => {
           className="btn-cta shrink-0 inline-flex items-center gap-2 rounded-xl px-4 py-3.5 text-[15px] font-semibold cursor-not-allowed"
           aria-disabled="true"
         >
-          {t('home.downloadComingSoon', '{{os}} app — Coming soon', { os: OS_LABEL[os] })}
+          {t('home.downloadComingSoon', '{{os}} app: Coming soon', { os: OS_LABEL[os] })}
         </span>
       )}
       <button

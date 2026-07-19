@@ -1042,7 +1042,7 @@ export const MessageInput = React.memo(forwardRef<MessageInputHandle, MessageInp
             <span className="text-xs font-medium truncate min-w-0" style={S_TEXT_SECONDARY}>
               {t('chat.replyingTo')} <span style={S_CYAN_ACCENT}>{replyingTo.authorUsername ?? t('common.unknown')}</span>
               {replyingTo.content && (
-                <span className="ml-1 truncate opacity-80">{'\u2014'} {replyingTo.content.slice(0, 40)}{replyingTo.content.length > 40 ? '\u2026' : ''}</span>
+                <span className="ml-1 truncate opacity-80">{'·'} {replyingTo.content.slice(0, 40)}{replyingTo.content.length > 40 ? '\u2026' : ''}</span>
               )}
             </span>
             <button type="button" onClick={onCancelReply} className="shrink-0 p-1 rounded-lg hover:bg-fill-active transition-colors" style={S_TEXT_SECONDARY} aria-label={t('chat.cancelReply')}>

@@ -99,7 +99,7 @@ const HomeFriendCard = React.memo(function HomeFriendCard({
               ? <span className="shrink-0 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               : <Gamepad2 size={10} className="shrink-0" />
             }
-            <span className="truncate">{friend.activity.type === 'twitch_live' || friend.activity.type === 'youtube_live' ? `${friend.activity.name}${friend.activity.state ? ` — ${friend.activity.state}` : ''}` : friend.activity.name}</span>
+            <span className="truncate">{friend.activity.type === 'twitch_live' || friend.activity.type === 'youtube_live' ? `${friend.activity.name}${friend.activity.state ? ` · ${friend.activity.state}` : ''}` : friend.activity.name}</span>
           </p>
         ) : (
           <p className="text-[10px] capitalize text-t-secondary">

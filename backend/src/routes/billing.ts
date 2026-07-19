@@ -531,7 +531,7 @@ router.post('/gift', authenticateToken, giftLimiter, validate(giftSchema), async
         price_data: {
           currency: stripePrice.currency,
           product_data: {
-            name: `Howl ${plan === 'essential' ? 'Essential' : 'Pro'} Gift — ${durationMonths} month${durationMonths > 1 ? 's' : ''}`,
+            name: `Howl ${plan === 'essential' ? 'Essential' : 'Pro'} Gift · ${durationMonths} month${durationMonths > 1 ? 's' : ''}`,
           },
           unit_amount: totalAmount,
         },
@@ -2280,7 +2280,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
                 reason: 'Processed via Stripe Dashboard',
                 initiatedBy: 'admin',
                 adminOverride: true,
-                adminOverrideReason: 'Stripe Dashboard refund — not processed through Howl',
+                adminOverrideReason: 'Stripe Dashboard refund, not processed through Howl',
                 status: 'completed',
                 paymentMethodFingerprint: fingerprint,
                 completedAt: new Date(),

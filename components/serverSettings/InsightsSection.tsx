@@ -26,7 +26,7 @@ interface ChartProps {
 }
 
 const LineChart: React.FC<ChartProps> = ({ points, labels, height = 80, color = 'var(--cyan-accent)', fillOpacity = 0.18 }) => {
-  if (points.length === 0) return <div className="h-20 flex items-center justify-center text-[11px] text-t-secondary">—</div>;
+  if (points.length === 0) return <div className="h-20 flex items-center justify-center text-[11px] text-t-secondary">–</div>;
   const max = Math.max(...points, 1);
   const min = Math.min(...points, 0);
   const range = Math.max(1, max - min);
@@ -57,7 +57,7 @@ interface StackedBarProps {
 
 const StackedBars: React.FC<StackedBarProps> = ({ series, height = 80 }) => {
   if (series.length === 0 || series[0].values.length === 0) {
-    return <div className="h-20 flex items-center justify-center text-[11px] text-t-secondary">—</div>;
+    return <div className="h-20 flex items-center justify-center text-[11px] text-t-secondary">–</div>;
   }
   const n = series[0].values.length;
   const totals: number[] = [];
@@ -104,7 +104,7 @@ interface BarChartProps {
 }
 
 const BarChart: React.FC<BarChartProps> = ({ values, color = 'var(--cyan-accent)', height = 80 }) => {
-  if (values.length === 0) return <div className="h-20 flex items-center justify-center text-[11px] text-t-secondary">—</div>;
+  if (values.length === 0) return <div className="h-20 flex items-center justify-center text-[11px] text-t-secondary">–</div>;
   const max = Math.max(...values, 1);
   const w = 100;
   const barW = w / values.length;

@@ -153,7 +153,7 @@ export const WelcomeScreenModal: React.FC<WelcomeScreenModalProps> = ({ serverId
 
             {data.channels.length === 0 ? (
               <p className="text-xs text-t-secondary italic py-4 text-center">
-                No welcome channels are highlighted yet — explore the channel list to get started.
+                No welcome channels are highlighted yet. Explore the channel list to get started.
               </p>
             ) : (
               <ul className="space-y-2">

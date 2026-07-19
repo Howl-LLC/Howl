@@ -932,7 +932,7 @@ export function AppLayout(props: AppLayoutProps) {
   const dmEncryptedUploadFile = useCallback(async (file: File) => {
     const channelId = useNavigationStore.getState().activeDmChannelId;
     if (!channelId) {
-      throw new Error('No active DM channel — cannot upload file.');
+      throw new Error('No active DM channel. Cannot upload file.');
     }
     const { encryptAndUploadFile } = await import('../services/dmEncryption');
     const result = await encryptAndUploadFile(file, channelId);
@@ -2264,7 +2264,7 @@ export function AppLayout(props: AppLayoutProps) {
       {isOffline && (
         <div className="bg-red-500/90 text-white text-xs font-semibold text-center py-1.5 px-4 flex items-center justify-center gap-2 z-[var(--z-max)] shrink-0">
           <span className="w-2 h-2 rounded-full bg-white/80 animate-pulse" />
-          You're offline — check your internet connection
+          You're offline. Check your internet connection
         </div>
       )}
       {backgroundImage && (
@@ -2315,7 +2315,7 @@ export function AppLayout(props: AppLayoutProps) {
       {showMfaBanner && (
         <div className="flex items-center gap-3 px-4 py-2 text-xs font-medium" style={{ backgroundColor: 'rgba(234,179,8,0.12)', color: '#fbbf24', borderBottom: '1px solid rgba(234,179,8,0.2)', paddingLeft: navLeftInset || undefined }}>
           <ShieldAlert size={14} className="shrink-0" />
-          <span>Secure your account — enable two-factor authentication (2FA) in <button type="button" className="underline hover:text-yellow-300 font-semibold" onClick={() => { useNavigationStore.getState().setAccountDeepLink({ page: 'my-account', subTab: 'security' }); navigate('/settings'); dismissMfaBanner(); }}>Account Settings &rarr; Security</button></span>
+          <span>Secure your account. Enable two-factor authentication (2FA) in <button type="button" className="underline hover:text-yellow-300 font-semibold" onClick={() => { useNavigationStore.getState().setAccountDeepLink({ page: 'my-account', subTab: 'security' }); navigate('/settings'); dismissMfaBanner(); }}>Account Settings &rarr; Security</button></span>
           <button type="button" onClick={dismissMfaBanner} className="ml-auto p-0.5 rounded-lg hover:bg-fill-active transition-colors" aria-label="Dismiss">
             <CloseIcon size={14} />
           </button>
@@ -3053,7 +3053,7 @@ export function AppLayout(props: AppLayoutProps) {
                 End-to-end encryption is active
               </p>
               <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
-                Your DMs, files, and calls are encrypted. Your encryption passphrase is your account password — you'll need it if you sign in on a new device. You can manage encryption and enable automatic password sync in Settings → Encryption.
+                Your DMs, files, and calls are encrypted. Your encryption passphrase is your account password. You'll need it if you sign in on a new device. You can manage encryption and enable automatic password sync in Settings → Encryption.
               </p>
             </div>
             <button

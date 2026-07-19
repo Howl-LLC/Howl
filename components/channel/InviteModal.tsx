@@ -322,7 +322,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
                         type="button"
                         disabled={isSent || isSending || !selectedInvite}
                         onClick={() => handleInviteFriend(friend.id)}
-                        title={!selectedInvite ? t('channels.noInviteSelected', { defaultValue: 'No invite link available — create one first' }) : undefined}
+                        title={!selectedInvite ? t('channels.noInviteSelected', { defaultValue: 'No invite link available. Create one first' }) : undefined}
                         className="btn-cta px-3 py-1 text-xs rounded-md shrink-0"
                         style={isSent ? { backgroundColor: 'rgba(34,197,94,0.15)', color: '#22c55e' } : undefined}
                       >

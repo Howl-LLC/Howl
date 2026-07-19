@@ -192,7 +192,7 @@ export class APIClient {
     if (method !== 'GET') {
       const until = this.rateLimitUntilByFamily.get(familyKey) ?? 0;
       if (Date.now() < until) {
-        throw Object.assign(new Error('Rate limited \u2014 please wait before retrying.'), { isRateLimit: true });
+        throw Object.assign(new Error('Rate limited. Please wait before retrying.'), { isRateLimit: true });
       }
       if (until && Date.now() >= until) this.rateLimitUntilByFamily.delete(familyKey);
     }

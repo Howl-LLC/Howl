@@ -27,7 +27,7 @@ export const ServerCard: React.FC<ServerCardProps> = ({ server }) => {
     <Link
       to={target}
       className="group block rounded-2xl overflow-hidden border border-[var(--border-subtle)] bg-[var(--fill-hover)] transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan-accent)]"
-      aria-label={t('discover.cardAria', '{{name}} — view server details', { name: server.name })}
+      aria-label={t('discover.cardAria', '{{name}}: view server details', { name: server.name })}
     >
       {/* Banner */}
       <div className="relative h-24 w-full overflow-hidden">

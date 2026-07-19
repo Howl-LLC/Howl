@@ -27,7 +27,7 @@ export function applicationAccepted(params: ApplicationAcceptedParams): Rendered
         <p style="color: #94a3b8; font-size: 14px; margin: 0 0 24px;">Your application to join <strong style="color: #076FA0;">${escapeHtml(params.serverName)}</strong> was accepted. You can jump in now.</p>
         ${noteBlock}
         <a href="${escapeHtml(params.serverUrl)}" style="display: inline-block; background: #076FA0; color: #f1f5f9; font-size: 14px; font-weight: 700; text-decoration: none; padding: 12px 32px; border-radius: 12px;">Open server</a>
-        <p style="color: #64748b; font-size: 12px; margin: 24px 0 0;">Have fun, and remember: every server has its own rules — check the welcome screen first.</p>
+        <p style="color: #64748b; font-size: 12px; margin: 24px 0 0;">Have fun, and remember: every server has its own rules. Check the welcome screen first.</p>
   `);
   return { subject, html, text: htmlToText(html) };
 }

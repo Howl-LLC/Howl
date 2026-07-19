@@ -25,7 +25,7 @@ async function main() {
   const interactive = !email || !username || !password;
 
   if (interactive) {
-    console.log('\n  Howl Admin — Create Admin Account\n');
+    console.log('\n  Howl Admin: Create Admin Account\n');
 
     if (!email) email = (await ask('  Email: ')).trim().toLowerCase();
     if (!email || !email.includes('@')) {

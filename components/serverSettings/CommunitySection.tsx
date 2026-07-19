@@ -652,7 +652,7 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({ server, show
               disabled={savingChannelDesignation}
               onChange={(v) => { void saveChannelDesignation({ rulesChannelId: v || null }); }}
               options={[
-                { value: '', label: t('communitySection.channelUnset', { defaultValue: '— Not set —' }) },
+                { value: '', label: t('communitySection.channelUnset', { defaultValue: 'Not set' }) },
                 ...textChannels.map((c) => ({ value: c.id, label: `# ${c.name}` })),
               ]}
             />
@@ -1173,7 +1173,7 @@ const PublicJoinToggle: React.FC<PublicJoinToggleProps> = ({ serverId, showToast
     <div className="mt-4 pt-4 border-t border-default">
       <SettingRow
         title={t('communitySection.publicJoinTitle', { defaultValue: 'Anyone with the link can join' })}
-        desc={t('communitySection.publicJoinDesc', { defaultValue: 'When on, the vanity URL itself is the join link — anyone visiting the public profile can join with one click. When off, members must use a private invite.' })}
+        desc={t('communitySection.publicJoinDesc', { defaultValue: 'When on, the vanity URL itself is the join link. Anyone visiting the public profile can join with one click. When off, members must use a private invite.' })}
       >
         <Toggle checked={joinMethod === 'discoverable'} disabled={saving} onChange={handleChange} />
       </SettingRow>

@@ -73,7 +73,7 @@ export const AppearancePreview = React.memo(function AppearancePreview() {
                   <span className="text-[9px] text-t-primary truncate">Bob · Reading</span>
                 </div>
                 <div className="my-1.5 h-px bg-white/[0.05]" />
-                <div className="px-1 py-0.5 text-[10px] text-t-secondary">🔊 Lounge — 2</div>
+                <div className="px-1 py-0.5 text-[10px] text-t-secondary">🔊 Lounge · 2</div>
                 <div className="px-1 py-0.5 text-[10px] text-t-secondary">🔊 Rainforest</div>
               </div>
             )}

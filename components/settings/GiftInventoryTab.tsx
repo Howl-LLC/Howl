@@ -287,7 +287,7 @@ export const GiftInventoryTab: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {g.plan === 'pro' ? t('billing.gifts.planPro') : t('billing.gifts.planEssential')} — {g.durationMonths} {t('billing.gifts.mo')}
+                      {g.plan === 'pro' ? t('billing.gifts.planPro') : t('billing.gifts.planEssential')} · {g.durationMonths} {t('billing.gifts.mo')}
                     </p>
                     <p className="text-[11px] font-mono" style={{ color: 'var(--text-secondary)' }}>
                       {t('billing.gifts.codeMasked')}: {maskCode(g.code)} · {new Date(g.createdAt).toLocaleDateString()}
@@ -373,7 +373,7 @@ export const GiftInventoryTab: React.FC = () => {
                       <div className="w-9 h-9 rounded-lg bg-[var(--cyan-accent)]/10 border border-[var(--cyan-accent)]/20 flex items-center justify-center"><Gift size={16} className="text-[var(--cyan-accent)]" /></div>
                       <div>
                         <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
-                          {g.plan === 'pro' ? t('billing.gifts.planPro') : t('billing.gifts.planEssential')} — {g.durationMonths} {t('billing.gifts.mo')}
+                          {g.plan === 'pro' ? t('billing.gifts.planPro') : t('billing.gifts.planEssential')} · {g.durationMonths} {t('billing.gifts.mo')}
                         </p>
                         <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
                           {t('billing.gifts.to')} {g.recipient ? `${g.recipient.username}#${g.recipient.discriminator}` : g.recipientUsername || t('billing.gifts.anyone')} · {new Date(g.createdAt).toLocaleDateString()}
@@ -413,7 +413,7 @@ export const GiftInventoryTab: React.FC = () => {
                       <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center"><Gift size={16} className="text-emerald-400" /></div>
                       <div>
                         <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
-                          {g.plan === 'pro' ? t('billing.gifts.planPro') : t('billing.gifts.planEssential')} — {g.durationMonths} {t('billing.gifts.mo')}
+                          {g.plan === 'pro' ? t('billing.gifts.planPro') : t('billing.gifts.planEssential')} · {g.durationMonths} {t('billing.gifts.mo')}
                         </p>
                         <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
                           {t('billing.gifts.from')} {g.sender.username}#{g.sender.discriminator} · {new Date(g.createdAt).toLocaleDateString()}

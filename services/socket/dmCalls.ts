@@ -62,7 +62,7 @@ SocketService.prototype.joinDmCall = function(this: SocketService, dmChannelId: 
       // HTTP /livekit/token fallback gets 403, room.connect() fails, and
       // RoomEvent.Disconnected fires. A loud failure with a retry is the
       // right UX. 15s is generous for a worst-case slow ACK.
-      reject(new Error('Join request timed out — please try again.'));
+      reject(new Error('Join request timed out. Please try again.'));
     }, 15000);
     // ACK carries the inline LiveKit token+url so the client avoids a
     // separate POST /livekit/token HTTP round trip (Tier 1 latency

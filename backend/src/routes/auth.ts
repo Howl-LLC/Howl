@@ -1239,7 +1239,7 @@ router.patch('/me/email', sensitiveActionLimiter, authenticateToken, validate(ch
 
   const oldEmail = user.email ? decryptOrPlain(user.email) : '';
   if (!oldEmail || !user.emailHash) {
-    return res.status(400).json({ error: 'Account has no email on file — cannot send confirmation code' });
+    return res.status(400).json({ error: 'Account has no email on file. Cannot send confirmation code' });
   }
 
   const codeOld = generateVerificationCode();
@@ -1391,7 +1391,7 @@ router.post('/email/revert', sensitiveActionLimiter, asyncHandler(async (req, re
   // Another account may have since claimed the old hash (unlikely but possible).
   const conflict = await prisma.user.findUnique({ where: { emailHash: payload.oldEmailHash }, select: { id: true } });
   if (conflict && conflict.id !== payload.userId) {
-    return res.status(409).json({ error: 'The original email address is already associated with another account — contact support.' });
+    return res.status(409).json({ error: 'The original email address is already associated with another account. Contact support.' });
   }
 
   // We don't store the plaintext old email anywhere after the change, so we

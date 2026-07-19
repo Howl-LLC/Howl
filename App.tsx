@@ -2810,7 +2810,7 @@ const App: React.FC = () => {
             pipelineRef.current = null;
             useVoiceStore.getState().setCameraStream(null);
             useVoiceStore.getState().setIsCameraOn(false);
-            showGlobalToast('Camera stopped — device may have been disconnected or used by another app', 'warning');
+            showGlobalToast('Camera stopped. Device may have been disconnected or used by another app', 'warning');
           }
         };
         track.addEventListener('ended', handleEnd, { once: true });
@@ -3367,7 +3367,7 @@ const App: React.FC = () => {
   // is detached before the engine-initiated track.stop().
   const handleMicTrackEnded = useCallback(() => {
     showGlobalToast(
-      t('toast.micDisconnected', 'Microphone disconnected — check your input device.'),
+      t('toast.micDisconnected', 'Microphone disconnected. Check your input device.'),
       'warning',
       8000,
     );

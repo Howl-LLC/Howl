@@ -72,7 +72,7 @@ SocketService.prototype.joinStageAudience = function(this: SocketService, channe
       // resolving with `{}` caused premature disconnects when the ACK was
       // late: the HTTP /livekit/token fallback gets 403 because the speaker
       // row hasn't committed, and the stage engine fails immediately.
-      reject(new Error('Stage join timed out — please try again.'));
+      reject(new Error('Stage join timed out. Please try again.'));
     }, 15000);
     sock.emit('stage-join-audience', channelId, (response?: { ok: boolean; error?: string; token?: string; url?: string }) => {
       if (settled) return;

@@ -285,9 +285,9 @@ const MemberItem: React.FC<{
             )}
             <span className="text-[10px] font-medium truncate" style={{ color: 'var(--text-secondary)' }}>
               {member.activity.type === 'spotify' && member.activity.details
-                ? <>{member.activity.details} — {member.activity.name}</>
+                ? <>{member.activity.details} · {member.activity.name}</>
                 : (member.activity.type === 'twitch_live' || member.activity.type === 'youtube_live') && member.activity.state
-                ? <>{member.activity.name} — {member.activity.state}</>
+                ? <>{member.activity.name} · {member.activity.state}</>
                 : member.activity.name}
             </span>
           </div>
@@ -352,7 +352,7 @@ const MemberVirtualList: React.FC<MemberVirtualListProps> = React.memo(({
           style={{ borderTop: '1px solid var(--border-subtle)' }}
         >
           <span className="text-[10px] font-semibold uppercase tracking-wider mt-4 first:mt-0" style={{ color: item.isOffline ? 'var(--text-secondary)' : 'var(--text-secondary)' }}>
-            {item.label} — {item.count}
+            {item.label} · {item.count}
           </span>
           {collapsedSections[item.key] ? <ChevronDown size={12} style={{ color: 'var(--text-secondary)' }} /> : <ChevronUp size={12} style={{ color: 'var(--text-secondary)' }} />}
         </button>

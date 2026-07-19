@@ -128,7 +128,7 @@ export const RolePickerChannel: React.FC<RolePickerChannelProps> = ({ server, ch
           }
         } else if (r.status === 'pending_approval') {
           setTree((prev) => prev ? mapEntry(prev, entry.id, (e) => ({ ...e, pending: true })) : prev);
-          showGlobalToast(t('rolePicker.requestSent', { defaultValue: 'Request sent — admins will review.' }));
+          showGlobalToast(t('rolePicker.requestSent', { defaultValue: 'Request sent. Admins will review.' }));
         }
       }
     } catch (e: unknown) {

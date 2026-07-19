@@ -77,7 +77,7 @@ async function processCalendarCheck(): Promise<void> {
           serverId: event.serverId,
           type: 'calendar_soon',
           title: 'Event starting soon',
-          body: `${event.title} — in ${minutesUntil} minutes`,
+          body: `${event.title} in ${minutesUntil} minutes`,
           metadata: { eventId: event.id, eventTitle: event.title, startTime: event.startTime.toISOString() },
         })),
         skipDuplicates: true,

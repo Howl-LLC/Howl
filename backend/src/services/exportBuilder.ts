@@ -440,7 +440,7 @@ export async function buildExportData(userId: string) {
         try {
           const parsed = JSON.parse(content);
           if (parsed?.v === 2 && typeof parsed?.iv === 'string' && typeof parsed?.ct === 'string') {
-            return { ...m, content: '[E2E encrypted message — decrypt locally]' };
+            return { ...m, content: '[E2E encrypted message, decrypt locally]' };
           }
         } catch { /* not JSON, keep as-is */ }
         return { ...m, content };

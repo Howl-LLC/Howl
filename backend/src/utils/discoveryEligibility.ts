@@ -15,7 +15,7 @@
  *   - Botted membership      → fails `sustained_engagement_met`
  *                              (need real distinct talkers, not just bodies)
  *   - One chatty user        → fails `sustained_engagement_met`
- *                              (need ≥30 distinct people, not raw messages)
+ *                              (need distinct people, not raw messages)
  *   - Pre-application spam   → fails `sustained_engagement_met`
  *                              (each of 4 weeks must clear the bar; one
  *                               big week + 3 dead weeks is filtered out)
@@ -42,20 +42,30 @@ import { evaluateCommunityEligibility } from './communityEligibility.js';
 
 // Threshold constants
 //
-// Initial threshold values — surfaced to owners with a "may evolve as Howl grows"
-// notice. Bump in lock-step with the eligibility-panel copy when changed.
-export const DISCOVERY_MIN_MEMBERS = 100;
-export const DISCOVERY_MIN_AGE_DAYS = 30;
+// Cold-start values (relaxed 2026-07-20): sized so a genuinely alive small
+// community can list on a small platform while botted or dead servers still
+// cannot. Every anti-gaming property above is preserved in miniature.
+// Expect to tighten these as Howl grows — labels and blocker copy derive
+// from these constants, so panel text follows automatically.
+export const DISCOVERY_MIN_MEMBERS = 10;
+export const DISCOVERY_MIN_AGE_DAYS = 14;
 /** Distinct human users that must send ≥1 message in EACH of the last
  *  ENGAGEMENT_WEEKS weeks. "In each week" (not "across the window") is
  *  what defeats one-week pre-application spam bursts. */
-export const DISCOVERY_MIN_DISTINCT_MESSAGERS_PER_WEEK = 30;
-export const DISCOVERY_ENGAGEMENT_WEEKS = 4;
+export const DISCOVERY_MIN_DISTINCT_MESSAGERS_PER_WEEK = 3;
+/** Keep ≤ DISCOVERY_MIN_AGE_DAYS / 7: a listed server must be old enough
+ *  to have data for the whole window, or its empty weeks auto-fail the
+ *  engagement bar and silently raise the effective age floor. */
+export const DISCOVERY_ENGAGEMENT_WEEKS = 2;
 /** Aggregate 7-day cohort retention required across the last 30 days:
  *  of all members who joined in the [d-37, d-7) window, what fraction
  *  was still present 7 days after their join. Aggregate (sum/sum) rather
  *  than per-day-mean so low-traffic days don't dominate the signal. */
 export const DISCOVERY_MIN_RETENTION_RATE = 0.5;
+/** Retention is only enforced once the 30-day join cohort reaches this
+ *  size — below it the rate is noise, not signal (one leaver reads as 0%
+ *  when two people joined). */
+export const DISCOVERY_MIN_RETENTION_COHORT = 5;
 
 const RETENTION_NUMERATOR_DAYS = 30;
 const RETENTION_DENOMINATOR_OFFSET_DAYS = 7;
@@ -190,9 +200,12 @@ export async function evaluateDiscoveryEligibility(
       select: { date: true, joins: true, retainedAfter7d: true },
       orderBy: { date: 'asc' },
     }),
-    // Distinct-author counts per 7-day bucket across the last 28 days. We
-    // use raw SQL because Prisma's groupBy doesn't support COUNT(DISTINCT).
-    // Bucket 0 = last 7 days, 1 = 7-14d ago, 2 = 14-21d, 3 = 21-28d.
+    // Distinct-author counts per 7-day bucket across the engagement window
+    // (ENGAGEMENT_WEEKS × 7 days; bucket 0 = last 7 days, 1 = 7-14d ago, …).
+    // We use raw SQL because Prisma's groupBy doesn't support
+    // COUNT(DISTINCT). The window derives from the constant so the two
+    // can't drift — a fetch window shorter than the bucket count would
+    // read as empty weeks and silently auto-fail the engagement bar.
     // System messages (type='system') are excluded — they're auto-generated
     // and don't represent real conversation. Index used:
     // Message(channelId, createdAt) (schema.prisma).
@@ -203,7 +216,7 @@ export async function evaluateDiscoveryEligibility(
       FROM "Message" m
       INNER JOIN "Channel" c ON m."channelId" = c.id
       WHERE c."serverId" = ${serverId}
-        AND m."createdAt" >= NOW() - INTERVAL '28 days'
+        AND m."createdAt" >= NOW() - make_interval(days => ${DISCOVERY_ENGAGEMENT_WEEKS * 7})
         AND m."type" = 'message'
       GROUP BY week_bucket
       ORDER BY week_bucket
@@ -237,9 +250,10 @@ export async function evaluateDiscoveryEligibility(
   // Aggregate (sum/sum) cohort retention over the last 30 days. Numerator:
   // sum of `retainedAfter7d` for [today-30, today). Denominator: sum of
   // `joins` for [today-37, today-7) — i.e. the join days that the
-  // numerator's retentions are derived from. Empty denominator (no joins
-  // in window) → undefined rate → treat as MET so closed/stable communities
-  // aren't penalised for lack of growth.
+  // numerator's retentions are derived from. The bar is only enforced once
+  // the cohort reaches DISCOVERY_MIN_RETENTION_COHORT joins: below that
+  // (including zero — closed/stable communities with no growth) the rate
+  // is noise and the check is treated as MET.
   const now = Date.now();
   const numStart = now - RETENTION_NUMERATOR_DAYS * DAY_MS;
   const denomStart = now - RETENTION_LOOKBACK_DAYS * DAY_MS;
@@ -260,7 +274,9 @@ export async function evaluateDiscoveryEligibility(
   const retentionRatePct =
     retentionRate !== null ? Math.round(retentionRate * 100) : null;
   const memberRetentionMet =
-    retentionRate === null || retentionRate >= DISCOVERY_MIN_RETENTION_RATE;
+    joinsSum < DISCOVERY_MIN_RETENTION_COHORT ||
+    retentionRate === null ||
+    retentionRate >= DISCOVERY_MIN_RETENTION_RATE;
 
   // Description: either short description OR longDescription is OK
   // longDescription is the public-preview marketing copy; short description

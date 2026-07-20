@@ -50,7 +50,7 @@ export interface EligibilityCheck {
 
 const LABELS: Record<EligibilityCheckKey, { label: string; metExplanation: string | null; fix: string | null }> = {
   owner_email_verified: { label: 'Owner email verified', metExplanation: 'Your account email is verified.', fix: null },
-  owner_mfa_enabled: { label: 'Two-factor authentication on the owner account', metExplanation: 'TOTP-based 2FA is active.', fix: 'mfa' },
+  owner_mfa_enabled: { label: 'Two-factor authentication on the owner account', metExplanation: 'Two-factor authentication is active (authenticator app or passkey).', fix: 'mfa' },
   rules_channel_set: { label: 'Rules channel designated', metExplanation: 'A channel is set as the server rules channel.', fix: 'rulesChannel' },
   rules_populated: { label: 'Server rules populated', metExplanation: 'At least one rule is published.', fix: 'rules' },
   verification_level_low_or_higher: { label: 'Verification level Low or higher', metExplanation: 'New accounts must verify before chatting.', fix: 'verification' },
@@ -68,14 +68,15 @@ export interface EligibilityResult {
 }
 
 /**
- * Resolve the owner of a server.
+ * Legacy owner lookup by role display string.
  *
- * The Server model has no `ownerId` column — owners are tracked through
- * `ServerMember.role = 'owner'` (case-insensitive in some legacy paths,
- * but `routes/servers.ts` writes the canonical lowercase value). We match
- * case-insensitively to be defensive against pre-canonicalisation rows.
+ * Ownership is authoritative via `Server.ownerId` (20260713
+ * add_server_owner_id migration); the mutable `ServerMember.role` string is
+ * a display artifact that can drift. This lookup exists only as a fallback
+ * for rows the migration backfill could not resolve (`ownerId` still null),
+ * matching the convention in `utils/permissions.ts` and `routes/gdpr.ts`.
  */
-async function findOwnerUserId(serverId: string): Promise<string | null> {
+async function findLegacyOwnerUserId(serverId: string): Promise<string | null> {
   const owner = await prisma.serverMember.findFirst({
     where: {
       serverId,
@@ -110,10 +111,10 @@ function rulesPopulated(rules: unknown): boolean {
  * point-in-time snapshot.
  */
 export async function evaluateCommunityEligibility(serverId: string): Promise<EligibilityResult> {
-  const [server, settings, ownerUserId] = await Promise.all([
+  const [server, settings] = await Promise.all([
     prisma.server.findUnique({
       where: { id: serverId },
-      select: { id: true, suspendedAt: true },
+      select: { id: true, suspendedAt: true, ownerId: true },
     }),
     prisma.serverSettings.findUnique({
       where: { serverId },
@@ -127,20 +128,30 @@ export async function evaluateCommunityEligibility(serverId: string): Promise<El
         bannerSplash: true,
       },
     }),
-    findOwnerUserId(serverId),
   ]);
 
-  // Owner snapshot — both email-verified and TOTP-MFA must be on. We resolve
-  // the User row inside the helper so callers don't need to plumb it.
+  const ownerUserId = server?.ownerId ?? (await findLegacyOwnerUserId(serverId));
+
+  // Owner snapshot — email-verified and an active MFA factor are both
+  // required. MFA counts any enrolled factor (TOTP secret or a passkey), not
+  // just the `mfaEnabled` flag: legacy enrollments can predate the flag write.
   let ownerEmailVerified = false;
   let ownerMfaEnabled = false;
   if (ownerUserId) {
     const owner = await prisma.user.findUnique({
       where: { id: ownerUserId },
-      select: { emailVerified: true, mfaEnabled: true },
+      select: {
+        emailVerified: true,
+        mfaEnabled: true,
+        mfaTotpSecret: true,
+        _count: { select: { passkeyCredentials: true } },
+      },
     });
     ownerEmailVerified = owner?.emailVerified === true;
-    ownerMfaEnabled = owner?.mfaEnabled === true;
+    ownerMfaEnabled =
+      owner?.mfaEnabled === true ||
+      !!owner?.mfaTotpSecret ||
+      (owner?._count.passkeyCredentials ?? 0) > 0;
   }
 
   const automodSpamRule = await prisma.automodRule.findFirst({

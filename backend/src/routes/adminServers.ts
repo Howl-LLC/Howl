@@ -42,6 +42,10 @@ import {
   sendServerUnsuspendedEmail,
 } from '../services/email.js';
 import { decryptSecret } from '../services/mfaCrypto.js';
+import {
+  getDiscoveryEligibility,
+  invalidateDiscoveryEligibility,
+} from '../services/discoveryEligibilityCache.js';
 
 const log = logger.child({ module: 'adminServers' });
 const router = Router();
@@ -128,7 +132,7 @@ async function persistAdminAction(params: {
 }) {
   const { serverId, adminId, data, suspensionAction, auditAction, reason, details } = params;
 
-  return prisma.$transaction([
+  const result = await prisma.$transaction([
     prisma.server.update({ where: { id: serverId }, data }),
     prisma.auditLog.create({
       data: {
@@ -146,6 +150,20 @@ async function persistAdminAction(params: {
       data: { serverId, action: suspensionAction, actorId: null, reason },
     }),
   ]);
+
+  // Every action through here (feature/verify/hide/override/suspend) changes
+  // a discovery-eligibility input. Refresh the cache AND the persisted
+  // eligibleForDiscoverySince column now — otherwise the flip stays invisible
+  // until the nightly recompute or an owner opening their settings panel.
+  // Best-effort: the admin action itself has already committed.
+  try {
+    await invalidateDiscoveryEligibility(serverId);
+    await getDiscoveryEligibility(serverId);
+  } catch (err) {
+    log.error({ err, serverId }, 'post-admin-action eligibility refresh failed');
+  }
+
+  return result;
 }
 
 // Boolean-flip flag handlers

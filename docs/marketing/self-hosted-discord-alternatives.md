@@ -7,7 +7,7 @@ lastVerified: 2026-07-10
 
 # Self-hosted Discord alternatives in 2026
 
-Five self-hosted, open-source Discord alternatives are worth a look in 2026: Matrix/Element, Fluxer, Stoat (formerly Revolt), Spacebar, and Howl (that's us). Each runs on your own server, each is open source, and the biggest difference between them is encryption: which parts are end-to-end encrypted varies from project to project.
+Six self-hosted, open-source Discord alternatives are worth a look in 2026: Matrix/Element, Fluxer, Stoat (formerly Revolt), Chatto, Spacebar, and Howl (that's us). Each runs on your own server, each is open source, and the biggest difference between them is encryption: which parts are end-to-end encrypted varies from project to project.
 
 We build Howl, so read our entry with that in mind.
 
@@ -15,7 +15,7 @@ In the table, the E2EE column means DMs and calls, not community channels. On Ho
 
 ## Comparison table
 
-The competitor rows reflect each project's publicly documented state as of 2026-07-10.
+The competitor rows reflect each project's publicly documented state as of 2026-07-10 (Chatto: 2026-07-30).
 
 | | License | E2EE (DMs / calls) | Voice channels | Native mobile | Self-host shape | Business model |
 |---|---|---|---|---|---|---|
@@ -24,6 +24,7 @@ The competitor rows reflect each project's publicly documented state as of 2026-
 | **Stoat** | AGPLv3 | DMs no (roadmap) / calls no | Yes (new system, Oct 2025) | Yes (inherited from Revolt) | Rust, multi-service | Donation-funded |
 | **Matrix/Element** | Open protocol; Synapse + Element OSS | DMs yes (default) / calls yes (Element Call) | Yes (Element Call/MatrixRTC) | Yes (Element / Element X) | Synapse + MatrixRTC, multi-service | Open protocol; Element hosted plans paid |
 | **Spacebar** | Open source | No E2EE | Yes (WIP) | No (web) | Alpha stage | Community project |
+| **Chatto** | AGPL-3.0-or-later (Apache-2.0 exceptions) | Text no (at-rest encryption only) / calls yes | Yes (built in) | Mobile browser; wrappers planned | Single 50 MB binary | Self-host free; paid EU cloud (beta) |
 
 ## Howl: DM- and call-encrypted, no native mobile yet
 
@@ -61,6 +62,12 @@ Spacebar (formerly Fosscord) reimplements Discord's API, so existing Discord cli
 
 Choose Spacebar if API and client compatibility with the existing Discord bot ecosystem is the whole point and you accept alpha-stage software without E2EE.
 
+## Chatto: single-binary team chat, E2EE calls, no text E2EE
+
+Chatto went open source on 8 July 2026, from German developer Hendrik Mans. It's team-chat-shaped rather than a Discord clone: one community per instance, rooms that range from free-form chat to forums and social feeds, a roles and permissions system, and voice, video, and screen sharing built in, described in its announcement as end-to-end encrypted. The deployment is unusually compact: a single 50 MB binary that serves its own frontend, with no separate database needed for a basic install, and SSO included in the open-source build. Text messages are not end-to-end encrypted, by design: they're encrypted at rest with per-user keys (deleting an account destroys its keys) and stay readable by the server, and the author has said text E2EE is not planned. Mobile is browser-first, with native wrappers planned. Content reporting and moderation are planned for its v0.5, and a paid managed cloud on European-owned infrastructure is in beta. All as of 2026-07-30.
+
+Choose Chatto if you want a single team or community space from the smallest possible deployment, with E2EE calls, and server-readable text is fine.
+
 ## Adjacent tools (not Discord clones, but often the right answer)
 
 - **Rocket.Chat / Mattermost / Zulip**: open-source, self-hostable team platforms. Rocket.Chat offers optional E2EE, off by default. Mattermost is strong on compliance, SSO, and admin, but not E2EE by default. Zulip's topic-threaded model tames channel sprawl and isn't E2EE either. Reach for one of these when you're outfitting a workplace rather than a community. (All as of 2026-07-10.)
@@ -71,16 +78,16 @@ Discord itself isn't self-hostable and is proprietary. It does E2EE calls by def
 ## FAQ
 
 **Which self-hosted Discord alternative has the most complete encryption?**
-Matrix/Element: it's the only one here with E2EE by default across text DMs, group chats, and calls (as of 2026-07-10). Howl covers DMs, group DMs, and all calls but not server text channels; Fluxer covers calls (canary) but not text; Stoat and Spacebar have no message E2EE yet.
+Matrix/Element: it's the only one here with E2EE by default across text DMs, group chats, and calls (as of 2026-07-10). Howl covers DMs, group DMs, and all calls but not server text channels; Fluxer covers calls (canary) but not text; Chatto covers calls but not text; Stoat and Spacebar have no message E2EE yet.
 
 **Are any of these fully end-to-end encrypted, including server channels?**
 Matrix/Element comes closest: private rooms and DMs are encrypted by default, though public community rooms generally aren't. On Howl, Fluxer, Stoat, and Spacebar, server text channels are readable by the server so they can be moderated, searched, and backed up; Howl's E2EE covers DMs, group DMs, and every call.
 
 **Which one has real native mobile apps?**
-Stoat and Matrix/Element have native iOS and Android apps as of 2026-07-10; Fluxer's Flutter apps are in the works. Howl is mobile-friendly in the browser with native apps on the way; Spacebar is web-first.
+Stoat and Matrix/Element have native iOS and Android apps as of 2026-07-10; Fluxer's Flutter apps are in the works. Howl is mobile-friendly in the browser with native apps on the way; Chatto is browser-first with native wrappers planned; Spacebar is web-first.
 
 **Which is easiest to self-host?**
-Howl runs from a single Docker Compose stack and Fluxer from a standard Node and Postgres stack. Matrix/Element involves the most services, since E2EE calls mean running MatrixRTC infrastructure alongside Synapse.
+Howl runs from a single Docker Compose stack, Chatto from a single binary with no separate database for a basic install, and Fluxer from a standard Node and Postgres stack. Matrix/Element involves the most services, since E2EE calls mean running MatrixRTC infrastructure alongside Synapse.
 
 **Can I migrate my Discord server?**
 Howl imports messages from per-channel JSON exports (Manage Server required); it doesn't import roles, members, permissions, or reactions. Spacebar takes a different route via Discord-API compatibility; check each project's own migration docs for current support.

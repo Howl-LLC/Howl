@@ -23,5 +23,6 @@ export const COMPARE_LINKS = [
   { href: '/compare/fluxer', label: 'Howl vs Fluxer' },
   { href: '/compare/stoat', label: 'Howl vs Stoat' },
   { href: '/compare/matrix', label: 'Howl vs Matrix' },
+  { href: '/compare/chatto', label: 'Howl vs Chatto' },
   { href: '/blog/self-hosted-discord-alternatives', label: 'Self-hosted alternatives (2026)' },
 ] as const

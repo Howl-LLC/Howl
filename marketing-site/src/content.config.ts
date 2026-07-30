@@ -4,7 +4,7 @@ import { defineCollection, z } from 'astro:content'
 import { glob } from 'astro/loaders'
 
 // The publish-ready copy lives in docs/marketing/ (single source of truth).
-// The site reads it in place; no copies. Only the seven public pages are
+// The site reads it in place; no copies. Only the eight public pages are
 // loaded — anything else in that directory stays out of the build.
 const marketing = defineCollection({
   loader: glob({
@@ -13,6 +13,7 @@ const marketing = defineCollection({
       'compare-fluxer.md',
       'compare-stoat.md',
       'compare-matrix.md',
+      'compare-chatto.md',
       'migrate-from-discord.md',
       'self-hosted-discord-alternatives.md',
       'security-page.md',

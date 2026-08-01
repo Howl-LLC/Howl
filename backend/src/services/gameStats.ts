@@ -1006,8 +1006,15 @@ export async function fetchGameStats(gameAccount: {
 /**
  * Fetch stats for a game account and write to GameStatsCache.
  * Returns true if stats were successfully fetched.
+ *
+ * `opts.manual` marks a user-initiated refresh: it stamps lastManualRefreshAt,
+ * which anchors the plan-based manual cooldown. Automatic refreshes (worker,
+ * initial link fetch) must NOT pass it — bumping the manual anchor from the
+ * background job would put the refresh button on cooldown without the user
+ * ever pressing it. Stamped even when the fetch errors, so the error retry
+ * budget can't be bypassed by hammering the endpoint.
  */
-export async function refreshGameAccountStats(gameAccountId: string): Promise<boolean> {
+export async function refreshGameAccountStats(gameAccountId: string, opts?: { manual?: boolean }): Promise<boolean> {
   const account = await prisma.gameAccount.findUnique({
     where: { id: gameAccountId },
     select: { id: true, game: true, provider: true, platformId: true, platform: true, displayName: true, userId: true },
@@ -1082,6 +1089,7 @@ export async function refreshGameAccountStats(gameAccountId: string): Promise<bo
       rank: (result.rank ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
       stats: (result.stats ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
       lastFetched: now,
+      ...(opts?.manual ? { lastManualRefreshAt: now } : {}),
       nextRefreshAt: nextRefresh,
       fetchError: result.error?.slice(0, 500) ?? null,
       errorRetryCount: result.error ? 1 : 0,
@@ -1091,6 +1099,7 @@ export async function refreshGameAccountStats(gameAccountId: string): Promise<bo
       rank: (result.rank ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
       stats: (result.stats ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
       lastFetched: now,
+      ...(opts?.manual ? { lastManualRefreshAt: now } : {}),
       nextRefreshAt: nextRefresh,
       fetchError: result.error?.slice(0, 500) ?? null,
       errorTransient: !!result.error && transient,

@@ -1078,7 +1078,7 @@ export const LinkedAppsTab: React.FC = () => {
               )}
               <p className="text-[8px] mt-2 ml-14" style={{ color: 'var(--text-secondary)' }}>
                 Data {game === 'apex' ? 'provided' : 'by'}{' '}
-                <a href={game === 'apex' ? 'https://apexlegendsstatus.com' : game === 'marvel_rivals' ? 'https://marvelrivalsapi.com' : 'https://r6data.eu'} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--text-secondary)' }}>
+                <a href={game === 'apex' ? 'https://apexlegendsstatus.com' : game === 'marvel_rivals' ? 'https://marvelrivalsapi.com' : 'https://r6data.com'} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--text-secondary)' }}>
                   {game === 'apex' ? 'Apex Legends Status' : game === 'marvel_rivals' ? 'MarvelRivalsAPI' : 'R6Data'}
                 </a>
               </p>

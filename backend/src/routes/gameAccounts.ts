@@ -240,7 +240,7 @@ router.post('/:id/refresh', validateUuidParams('id'), authenticateToken, gameAcc
   const account = await prisma.gameAccount.findUnique({
     where: { id: req.params.id as string },
     include: {
-      statsCache: { select: { lastFetched: true, fetchError: true, errorRetryCount: true, errorTransient: true } },
+      statsCache: { select: { lastFetched: true, lastManualRefreshAt: true, fetchError: true, errorRetryCount: true, errorTransient: true } },
       user: { select: { stripePlan: true, stripeStatus: true, stripePeriodEnd: true, stripeSubscriptionId: true, showcaseLayout: true } },
     },
   });
@@ -262,34 +262,42 @@ router.post('/:id/refresh', validateUuidParams('id'), authenticateToken, gameAcc
   }
 
   // Check manual refresh cooldown based on plan
-  if (account.statsCache?.lastFetched) {
+  if (account.statsCache) {
     const plan = getEffectivePlan(account.user);
-    const cooldownHours = plan === 'pro' ? 1 : plan === 'essential' ? 3 : 24;
+    // Keep in sync with shared/planPerks.ts → showcaseManualRefreshHours
+    const cooldownHours = plan === 'pro' ? 1 : plan === 'essential' ? 6 : 24;
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
-    const elapsed = Date.now() - account.statsCache.lastFetched.getTime();
 
     // Cooldown selection:
-    //   - transient outage on the provider side → 1h (don't hammer them)
-    //   - normal error within retry budget → 30s (fast loop for fixable issues)
-    //   - everything else → plan cooldown (1h Pro / 3h Essential / 24h Free)
+    //   - transient outage on the provider side → 1h since last attempt (don't hammer them)
+    //   - normal error within retry budget → 30s since last attempt (fast loop for fixable issues)
+    //   - everything else → plan cooldown (1h Pro / 6h Essential / 24h Free)
+    //     anchored to the last MANUAL refresh, not lastFetched — the showcase
+    //     worker bumps lastFetched on every auto-refresh, which used to keep
+    //     free users (24h manual cooldown = 24h auto interval) permanently
+    //     on cooldown.
     const hasError = !!account.statsCache.fetchError;
     const retryCount = account.statsCache.errorRetryCount ?? 0;
     const isTransient = !!account.statsCache.errorTransient;
+    let anchor: Date | null;
     let effectiveCooldownMs: number;
     let cooldownReason: 'transient' | 'fast-retry' | 'normal';
     if (hasError && isTransient) {
+      anchor = account.statsCache.lastFetched;
       effectiveCooldownMs = 60 * 60 * 1000;
       cooldownReason = 'transient';
     } else if (hasError && retryCount < 5) {
+      anchor = account.statsCache.lastFetched;
       effectiveCooldownMs = 30_000;
       cooldownReason = 'fast-retry';
     } else {
+      anchor = account.statsCache.lastManualRefreshAt;
       effectiveCooldownMs = cooldownMs;
       cooldownReason = 'normal';
     }
 
-    if (elapsed < effectiveCooldownMs) {
-      const nextAvailable = new Date(account.statsCache.lastFetched.getTime() + effectiveCooldownMs);
+    if (anchor && Date.now() - anchor.getTime() < effectiveCooldownMs) {
+      const nextAvailable = new Date(anchor.getTime() + effectiveCooldownMs);
       return res.status(429).json({
         error: cooldownReason === 'transient'
           ? 'Provider is having issues — retry in ~1h'
@@ -305,8 +313,8 @@ router.post('/:id/refresh', validateUuidParams('id'), authenticateToken, gameAcc
     }
   }
 
-  // Fetch fresh stats
-  const success = await refreshGameAccountStats(account.id);
+  // Fetch fresh stats (manual: anchors the plan cooldown to this attempt)
+  const success = await refreshGameAccountStats(account.id, { manual: true });
 
   // If this is a Steam game, also refresh playtime data
   if (['cs2', 'dota2'].includes(account.game)) {

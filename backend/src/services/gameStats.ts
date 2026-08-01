@@ -601,7 +601,7 @@ async function fetchMarvelRivalsStats(username: string): Promise<FetchResult> {
   };
 }
 
-// RAINBOW SIX SIEGE (r6data.eu)
+// RAINBOW SIX SIEGE (r6data.com)
 
 /** R6 Siege season info: season_id → { code, name, start } */
 const R6_SEASON_INFO: Record<number, { code: string; name: string; start: string }> = {
@@ -656,7 +656,7 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
 
   // Single API call — type=stats returns rank + stats + per-season data
   const res = await safeFetch(
-    `https://api.r6data.eu/api/stats?type=stats&nameOnPlatform=${encodeURIComponent(username)}&platformType=${r6Platform}&platform_families=${platformFamily}`, {
+    `https://api.r6data.com/api/stats?type=stats&nameOnPlatform=${encodeURIComponent(username)}&platformType=${r6Platform}&platform_families=${platformFamily}`, {
       headers: { 'api-key': R6_API_KEY },
     }
   );
@@ -711,7 +711,7 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
     36: 'Champion',
   };
 
-  // Static rank image URLs from r6data.eu — fallback when seasonalStats doesn't return an image
+  // Static rank image URLs from r6data.com — fallback when seasonalStats doesn't return an image
   const R6_RANK_IMAGES: Record<number, string> = {
     1: 'copper-5', 2: 'copper-4', 3: 'copper-3', 4: 'copper-2', 5: 'copper-1',
     6: 'bronze-5', 7: 'bronze-4', 8: 'bronze-3', 9: 'bronze-2', 10: 'bronze-1',
@@ -744,7 +744,7 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
 
   if (p.rank > 0) {
     const seasonalRes = await safeFetch(
-      `https://api.r6data.eu/api/stats?type=seasonalStats&nameOnPlatform=${encodeURIComponent(username)}&platformType=${r6Platform}`, {
+      `https://api.r6data.com/api/stats?type=seasonalStats&nameOnPlatform=${encodeURIComponent(username)}&platformType=${r6Platform}`, {
         headers: { 'api-key': R6_API_KEY },
       }
     );
@@ -782,7 +782,7 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
   if (!rankImageUrl && p.rank > 0) {
     const slug = R6_RANK_IMAGES[p.rank];
     if (slug) {
-      rankImageUrl = `https://r6data.eu/assets/img/r6_ranks_img/${slug}.webp`;
+      rankImageUrl = `https://r6data.com/assets/img/r6_ranks_img/${slug}.webp`;
     }
   }
 

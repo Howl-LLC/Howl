@@ -134,7 +134,7 @@ export const DATA_PROVIDERS: Record<string, { name: string; url: string }> = {
   dota2: { name: 'OpenDota', url: 'https://opendota.com' },
   fortnite: { name: 'Fortnite-API.com', url: 'https://fortnite-api.com' },
   marvel_rivals: { name: 'MarvelRivalsAPI', url: 'https://marvelrivalsapi.com' },
-  r6_siege: { name: 'R6Data', url: 'https://r6data.eu' },
+  r6_siege: { name: 'R6Data', url: 'https://r6data.com' },
 };
 
 // Inline Spotify SVG to avoid importing from icons (keeps this module lightweight)

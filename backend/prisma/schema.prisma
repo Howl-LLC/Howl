@@ -2086,6 +2086,7 @@ model GameStatsCache {
   rank            Json? // { tier: string, division: string | null, rating: number | null, imageUrl: string | null }
   stats           Json? // { kd: number, winRate: number, matches: number, ... } — shape varies per game
   lastFetched     DateTime?
+  lastManualRefreshAt DateTime? // Last user-initiated refresh — anchors the manual cooldown (auto-refresh must not reset it)
   nextRefreshAt   DateTime?
   fetchError      String? // Last error message if fetch failed
   errorRetryCount Int         @default(0)

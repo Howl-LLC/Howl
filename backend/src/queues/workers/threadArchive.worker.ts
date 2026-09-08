@@ -14,7 +14,7 @@ export function setThreadArchiveIO(ioServer: IOServer): void {
   io = ioServer;
 }
 
-async function processJob(_job: Job): Promise<void> {
+export async function processJob(_job: Job): Promise<void> {
   const now = new Date();
 
   // Find threads that are:
@@ -33,6 +33,7 @@ async function processJob(_job: Job): Promise<void> {
       name: true,
       autoArchiveDuration: true,
       lastActivityAt: true,
+      channel: { select: { isPrivate: true } },
     },
     take: 200,
   });
@@ -55,7 +56,13 @@ async function processJob(_job: Job): Promise<void> {
       archived: true,
     };
 
-    io?.to(`channel:${thread.channelId}`).to(`server:${thread.serverId}`).emit('thread-archived', payload);
+    // private channel -> channel room only (viewers are joined there),
+    // never the server-wide room. Public channels keep the server-room copy.
+    // Mirrors the manual archive path in routes/threads.ts.
+    const archiveScope = thread.channel?.isPrivate
+      ? io?.to(`channel:${thread.channelId}`)
+      : io?.to(`channel:${thread.channelId}`).to(`server:${thread.serverId}`);
+    archiveScope?.emit('thread-archived', payload);
     io?.to(`thread:${thread.id}`).emit('thread-archived', payload);
 
     archivedCount++;

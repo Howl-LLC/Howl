@@ -32,9 +32,11 @@ export async function storeSsoCode(result: SsoSessionEntry | SsoMfaEntry): Promi
 
 export async function consumeSsoCode(code: string): Promise<SsoCodeEntry | null> {
   if (redis) {
-    const raw = await redis.get(`sso-code:${code}`);
+    // getdel is atomic: two racing redemptions cannot both observe the code present,
+    // preserving the single-use / theft-detection property. The former
+    // get-then-del had an await gap on the Redis branch.
+    const raw = await redis.getdel(`sso-code:${code}`);
     if (raw) {
-      await redis.del(`sso-code:${code}`); // single-use
       return JSON.parse(raw) as SsoCodeEntry;
     }
     return null;

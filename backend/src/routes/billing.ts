@@ -1202,14 +1202,24 @@ async function findEligibleCharge(
           senderId: userId,
           status: 'pending',
           createdAt: { gte: new Date(now - REFUND_WINDOW_MS) },
+          // Only a gift carrying its own Stripe payment reference is self-serve
+          // refundable: without it nothing binds the refund to this gift, and the
+          // scan below would be free to pick any charge on the customer
+          // (M-MONEY-01). Gifts created before that reference was persisted fall
+          // through to the admin refund path.
+          stripePaymentIntentId: { not: null },
         },
         orderBy: { createdAt: 'desc' },
         select: { id: true, stripePaymentIntentId: true, createdAt: true },
       });
-      if (!recentGift) return { eligible: false, reason: 'no_eligible_gift' };
+      if (!recentGift || !recentGift.stripePaymentIntentId) return { eligible: false, reason: 'no_eligible_gift' };
+      const giftPaymentIntentId = recentGift.stripePaymentIntentId;
 
       const charges = await stripe.charges.list({
         customer: user.stripeCustomerId,
+        // Bind the scan to this gift's own payment intent so Stripe returns only
+        // the charge that gift produced, never an unrelated charge on the customer.
+        payment_intent: giftPaymentIntentId,
         limit: 20,
         created: { gte: Math.floor((now - REFUND_WINDOW_MS) / 1000) },
       });
@@ -1234,10 +1244,8 @@ async function findEligibleCharge(
         const chargeCustomerId = typeof charge.customer === 'string' ? charge.customer : charge.customer?.id;
         if (chargeCustomerId !== user.stripeCustomerId) continue;
 
-        if (recentGift.stripePaymentIntentId) {
-          const chargePi = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id;
-          if (chargePi !== recentGift.stripePaymentIntentId) continue;
-        }
+        const chargePi = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id;
+        if (chargePi !== giftPaymentIntentId) continue;
 
         const chargeDate = new Date(charge.created * 1000);
         if (now - chargeDate.getTime() > REFUND_WINDOW_MS) continue;
@@ -1901,9 +1909,20 @@ router.post('/webhook', async (req: Request, res: Response) => {
         // Handle gift checkout (UNCHANGED)
         const howlGiftId = session.metadata?.howlGiftId;
         if (howlGiftId) {
+          // Persist this gift's Stripe payment reference. The self-serve gift
+          // refund (findEligibleCharge, type='gift') binds to it; without it the
+          // refund cannot be tied to the gift's own charge and would be free to
+          // pick any charge on the customer (M-MONEY-01).
+          const giftPaymentIntentId =
+            typeof session.payment_intent === 'string'
+              ? session.payment_intent
+              : session.payment_intent?.id ?? null;
+          if (!giftPaymentIntentId) {
+            log.warn({ giftId: howlGiftId, sessionId: session.id }, 'Gift checkout completed with no payment_intent — gift will not be self-serve refundable');
+          }
           await prisma.giftSubscription.updateMany({
             where: { id: howlGiftId, status: 'payment_pending' },
-            data: { status: 'pending' },
+            data: { status: 'pending', stripePaymentIntentId: giftPaymentIntentId },
           });
           break;
         }

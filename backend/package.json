@@ -24,6 +24,7 @@
     "test:db": "vitest run tests/db.test.ts",
     "create-admin": "npx tsx src/scripts/createAdmin.ts",
     "reset-admin-password": "npx tsx src/scripts/resetAdminPassword.ts",
+    "reset-admin-mfa": "npx tsx src/scripts/resetAdminMfa.ts",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "audit:security": "npm audit --production --audit-level=high",

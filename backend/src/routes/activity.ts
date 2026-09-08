@@ -122,14 +122,21 @@ router.get('/friends', authenticateToken, activityReadLimiter, asyncHandler(asyn
     select: {
       id: true,
       showCurrentActivity: true,
+      activitySharingEnabled: true,
+      status: true,
       activity: { select: ACTIVITY_SELECT },
     },
     take: 2000,
   });
 
-  // Filter by privacy: friends_only and everyone both allow friends to see
+  // Filter by privacy: master toggle off, "nobody" scope, or invisible/offline all suppress
+  // (invisible and offline behave identically — the Discord model; mirror infrastructure.ts).
   const results = friends
-    .filter(f => f.showCurrentActivity !== 'nobody' && f.activity)
+    .filter(f =>
+      f.activitySharingEnabled !== false &&
+      f.showCurrentActivity !== 'nobody' &&
+      f.status !== 'invisible' && f.status !== 'offline' &&
+      f.activity)
     .map(f => ({
       userId: f.id,
       activity: f.activity,
@@ -285,12 +292,18 @@ router.get('/:userId/history', authenticateToken, activityReadLimiter, validateU
     }),
     prisma.user.findUnique({
       where: { id: targetUserId },
-      select: { showCurrentActivity: true, profilePrivate: true },
+      select: { showCurrentActivity: true, profilePrivate: true, activitySharingEnabled: true, status: true },
     }),
   ]);
 
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (blockExists) return res.json([]);
+
+  // Master activity-sharing toggle off, or invisible/offline, suppress everything —
+  // mirror the broadcast gate (infrastructure.ts / notification.worker) so REST and
+  // socket agree, and so an invisible user's history is not readable by a stranger.
+  if (target.activitySharingEnabled === false) return res.json([]);
+  if (target.status === 'invisible' || target.status === 'offline') return res.json([]);
 
   // Private profile + activity visibility gates (cache friendship check to avoid double query)
   let friendshipChecked = false;
@@ -349,6 +362,8 @@ router.get('/:userId', authenticateToken, activityReadLimiter, validateUuidParam
       select: {
         showCurrentActivity: true,
         profilePrivate: true,
+        activitySharingEnabled: true,
+        status: true,
         activity: { select: ACTIVITY_SELECT },
       },
     }),
@@ -356,6 +371,12 @@ router.get('/:userId', authenticateToken, activityReadLimiter, validateUuidParam
 
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (blockExists) return res.json({ userId: targetUserId, activity: null });
+
+  // Master activity-sharing toggle off, or invisible/offline, suppress the activity —
+  // mirror the broadcast gate (infrastructure.ts / notification.worker) so REST and
+  // socket agree, and so an invisible user's activity is not readable by a stranger.
+  if (target.activitySharingEnabled === false) return res.json({ userId: targetUserId, activity: null });
+  if (target.status === 'invisible' || target.status === 'offline') return res.json({ userId: targetUserId, activity: null });
 
   // Private profile + activity visibility gates (cache friendship check to avoid double query)
   let friendChecked = false;

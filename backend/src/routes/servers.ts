@@ -17,7 +17,7 @@ import { validate } from '../middleware/validate.js';
 import { VALID_PERMISSIONS, createServerSchema, createServerFromTemplateSchema, updateServerSchema, createChannelSchema, updateChannelSchema, createCategorySchema, updateCategorySchema, reorderChannelsSchema, reorderCategoriesSchema, setServerOrderSchema, transferOwnershipSchema, updateServerProfileSchema, updatePrivacySchema, serverMembersQuery, timeoutMemberSchema, manageNicknameSchema, completeServerOnboardingSchema } from '../schemas.js';
 import { applyBadgePrefs } from '../utils/badges.js';
 import { canViewChannel } from '../utils/channelPermissions.js';
-import { autoJoinVisibleServerMembers, evictMinorSocketsFromAgeGatedChannel, emitChannelEventToViewers } from '../utils/channelVisibility.js';
+import { autoJoinVisibleServerMembers, evictMinorSocketsFromAgeGatedChannel, emitChannelEventToViewers, emitVoicePresenceScoped } from '../utils/channelVisibility.js';
 import { containsProfanity } from '../utils/usernameValidator.js';
 import { resolveActivityWinner } from '../socketHandlers/infrastructure.js';
 import { powerUpTier, toRelativeUploadUrl, serverMutationLimiter } from './serverHelpers.js';
@@ -784,7 +784,7 @@ router.post('/:serverId/leave', validateUuidParams('serverId'), authenticateToke
 
     // Evict leaving user from server/channel/voice socket rooms
     const sockets = await io.in(`user:${req.userId}`).fetchSockets();
-    const serverChannels = await prisma.channel.findMany({ where: { serverId }, select: { id: true }, take: 500 });
+    const serverChannels = await prisma.channel.findMany({ where: { serverId }, select: { id: true, isPrivate: true, categoryId: true, ageRestricted: true }, take: 500 });
     const roomsToLeave = [`server:${serverId}`, ...serverChannels.map(c => `channel:${c.id}`), ...serverChannels.map(c => `voice:${c.id}`)];
     for (const s of sockets) {
       for (const room of roomsToLeave) s.leave(room);
@@ -800,8 +800,11 @@ router.post('/:serverId/leave', validateUuidParams('serverId'), authenticateToke
         await deleteVoiceOverride(voiceChannelId, req.userId!);
         io.to(`voice:${voiceChannelId}`).emit('voice-user-left', { userId: req.userId });
         const participants = await getVoiceParticipants(voiceChannelId);
-        io.to(`server:${serverId}`).emit('server-voice-participants', {
-          serverId, channelId: voiceChannelId, participants,
+        void emitVoicePresenceScoped({
+          io,
+          channel: { id: voiceChannelId, serverId, isPrivate: voiceChannel.isPrivate, categoryId: voiceChannel.categoryId, ageRestricted: voiceChannel.ageRestricted },
+          event: 'server-voice-participants',
+          payload: { serverId, channelId: voiceChannelId, participants },
         });
         // Forward secrecy at the leave boundary. Rotate the SFrame key so
         // the leaver's retained key no longer protects subsequent media, and
@@ -1195,6 +1198,13 @@ router.delete('/:serverId/channels/:channelId', validateUuidParams('serverId', '
   // Delete reactions then messages via Prisma to preserve cascades
   await prisma.messageReaction.deleteMany({ where: { message: { channelId } } });
   await prisma.message.deleteMany({ where: { channelId } });
+  // Capture the channel's permission overrides BEFORE the delete: the cascade
+  // on prisma.channel.delete wipes ChannelPermissionOverride, and the scoped
+  // channel-deleted emit below needs them to compute who could see the private
+  // channel. Public channels don't need them — they broadcast to all.
+  const deletedChannelOverrides = (channel as any).isPrivate
+    ? await prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 10000 })
+    : [];
   // Now safe to delete the channel itself
   await prisma.channel.delete({ where: { id: channelId } });
   // Scrub the deleted channelId from members' acceptedAgeRestrictedChannelIds arrays.
@@ -1207,7 +1217,28 @@ router.delete('/:serverId/channels/:channelId', validateUuidParams('serverId', '
   `;
   await createAuditLog(serverId, req.userId!, 'channel_delete', 'channel', channelId, { name: channel.name, type: channel.type }).catch(() => {});
   const io = req.app.get('io');
-  if (io) io.to(`server:${serverId}`).emit('channel-deleted', { serverId, channelId });
+  if (io) {
+    if ((channel as any).isPrivate) {
+      // scope channel-deleted to viewers only, so a private channel's
+      // existence (its UUID) is not broadcast to non-viewers. Mirrors the
+      // channel-updated-meta path above. Category overrides cascade from the
+      // category, not the channel, so they survive the delete and are read fresh.
+      const catOvr = (channel as any).categoryId
+        ? await prisma.categoryPermissionOverride.findMany({ where: { categoryId: (channel as any).categoryId }, take: 10000 })
+        : [];
+      await emitChannelEventToViewers({
+        io,
+        serverId,
+        channel: { id: channelId, isPrivate: true, categoryId: (channel as any).categoryId ?? null },
+        channelOverrides: deletedChannelOverrides,
+        categoryOverrides: catOvr,
+        event: 'channel-deleted',
+        payload: { serverId, channelId },
+      });
+    } else {
+      io.to(`server:${serverId}`).emit('channel-deleted', { serverId, channelId });
+    }
+  }
   res.status(204).send();
   // Fire-and-forget file cleanup from R2
   if (attachmentUrls.length > 0) {
@@ -1542,7 +1573,7 @@ router.delete('/:serverId/members/:userId', validateUuidParams('serverId', 'user
     io.to(`user:${targetUserId}`).emit('server-kicked', { serverId });
 
     const sockets = await io.in(`user:${targetUserId}`).fetchSockets();
-    const serverChannels = await prisma.channel.findMany({ where: { serverId }, select: { id: true }, take: 500 });
+    const serverChannels = await prisma.channel.findMany({ where: { serverId }, select: { id: true, isPrivate: true, categoryId: true, ageRestricted: true }, take: 500 });
     const roomsToLeave = [`server:${serverId}`, ...serverChannels.map(c => `channel:${c.id}`), ...serverChannels.map(c => `voice:${c.id}`)];
     for (const s of sockets) {
       for (const room of roomsToLeave) s.leave(room);
@@ -1557,8 +1588,11 @@ router.delete('/:serverId/members/:userId', validateUuidParams('serverId', 'user
         await deleteVoiceOverride(voiceChannelId, targetUserId);
         io.to(`voice:${voiceChannelId}`).emit('voice-user-left', { userId: targetUserId });
         const participants = await getVoiceParticipants(voiceChannelId);
-        io.to(`server:${serverId}`).emit('server-voice-participants', {
-          serverId, channelId: voiceChannelId, participants,
+        void emitVoicePresenceScoped({
+          io,
+          channel: { id: voiceChannelId, serverId, isPrivate: voiceChannel.isPrivate, categoryId: voiceChannel.categoryId, ageRestricted: voiceChannel.ageRestricted },
+          event: 'server-voice-participants',
+          payload: { serverId, channelId: voiceChannelId, participants },
         });
         // Forward secrecy at the kick boundary: rotate the SFrame key so
         // the kicked member's retained key no longer protects subsequent media.
@@ -2070,7 +2104,7 @@ router.post('/:serverId/members/:userId/timeout', validateUuidParams('serverId',
     // Kick from voice if currently connected
     const voiceChannelId = await findUserVoiceChannel(targetUserId);
     if (voiceChannelId) {
-      const voiceChannel = await prisma.channel.findUnique({ where: { id: voiceChannelId }, select: { serverId: true } });
+      const voiceChannel = await prisma.channel.findUnique({ where: { id: voiceChannelId }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } });
       if (voiceChannel?.serverId === serverId) {
         await removeVoiceParticipant(voiceChannelId, targetUserId);
         await setVoiceReverseLookup(targetUserId, null);
@@ -2078,8 +2112,11 @@ router.post('/:serverId/members/:userId/timeout', validateUuidParams('serverId',
         io.to(`voice:${voiceChannelId}`).emit('voice-user-left', { userId: targetUserId });
         io.to(`user:${targetUserId}`).emit('voice-auto-disconnected', { channelId: voiceChannelId });
         const participants = await getVoiceParticipants(voiceChannelId);
-        io.to(`server:${serverId}`).emit('server-voice-participants', {
-          serverId, channelId: voiceChannelId, participants,
+        void emitVoicePresenceScoped({
+          io,
+          channel: { id: voiceChannelId, serverId, isPrivate: voiceChannel.isPrivate, categoryId: voiceChannel.categoryId, ageRestricted: voiceChannel.ageRestricted },
+          event: 'server-voice-participants',
+          payload: { serverId, channelId: voiceChannelId, participants },
         });
         // Forward secrecy at the timeout boundary: rotate the SFrame key
         // so the timed-out member's retained key no longer protects later media.

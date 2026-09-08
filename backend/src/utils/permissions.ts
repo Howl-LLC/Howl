@@ -407,6 +407,58 @@ export function canViewChannel(
 }
 
 /**
+ * Channel-content read-gate helpers: the single source of truth for "may this member touch this channel's content", mirroring the
+ * reference gate in routes/messages.ts (GET at :703-708, send at :957-963).
+ *
+ * Two halves:
+ *   - VISIBILITY (private channels only): the caller must hold `viewChannels`
+ *     through the channel/category override chain (`requireOverride`, so the
+ *     @everyone server baseline does NOT satisfy it — otherwise marking a channel
+ *     private is meaningless). Denial → 404, because a private channel's very
+ *     existence must not leak.
+ *   - READABILITY (all channels): the caller must hold `readMessageHistory`
+ *     through the override chain (which falls through to the server base for
+ *     public channels). Denial → 403.
+ *
+ * `assertChannelVisible` applies ONLY the visibility half and is the correct gate
+ * for WRITE paths (send / react / vote / create / raise-hand): those carry their
+ * own action permission and, per messages.ts (send :961, react :1256), never
+ * require `readMessageHistory`. `assertChannelReadable` applies both halves and
+ * is the gate for READ paths (history / lists / detail / roster).
+ *
+ * Both return a discriminated result so every gated route applies identical
+ * status codes and bodies, and the load-bearing `undefined` in the `everyoneRole`
+ * slot of the `viewChannels` check lives in exactly one place (`canViewChannel`).
+ */
+export type ChannelGateResult = { ok: true } | { ok: false; status: 404 | 403; error: string };
+
+export function assertChannelVisible(
+  ctxOrMember: PermissionContext | LegacyMember | null | undefined,
+  channel: { isPrivate: boolean },
+  channelOverrides: PermissionOverride[],
+  categoryOverrides: PermissionOverride[],
+): { ok: true } | { ok: false; status: 404; error: string } {
+  if (!canViewChannel(ctxOrMember, channel, channelOverrides, categoryOverrides)) {
+    return { ok: false, status: 404, error: 'Channel not found' };
+  }
+  return { ok: true };
+}
+
+export function assertChannelReadable(
+  ctxOrMember: PermissionContext | LegacyMember | null | undefined,
+  channel: { isPrivate: boolean },
+  channelOverrides: PermissionOverride[],
+  categoryOverrides: PermissionOverride[],
+): ChannelGateResult {
+  const visible = assertChannelVisible(ctxOrMember, channel, channelOverrides, categoryOverrides);
+  if (!visible.ok) return visible;
+  if (!hasChannelPermission(ctxOrMember, 'readMessageHistory', channelOverrides, categoryOverrides)) {
+    return { ok: false, status: 403, error: 'You do not have permission to read message history in this server.' };
+  }
+  return { ok: true };
+}
+
+/**
  * Async wrapper for call sites that just have userId+serverId. Loads the
  * context on demand. Used by socket handlers (stages, threads) that prefer a
  * single-shot helper over manual context loading.

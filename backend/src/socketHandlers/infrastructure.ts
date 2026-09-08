@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Howl LLC
 import { getIO } from '../socketIO.js';
 import { prisma } from '../db.js';
+import { emitVoicePresenceScoped } from '../utils/channelVisibility.js';
 import { Prisma } from '../../generated/prisma-client-v7/client.js';
 import { logger } from '../logger.js';
 import { enqueueNotification } from '../queues/producers.js';
@@ -501,10 +502,10 @@ export async function checkVoiceInactivity(channelId: string) {
     await deleteVoiceOverride(channelId, aloneUserId);
     await setVoiceReverseLookup(aloneUserId, null);
 
-    const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } }).catch(() => null);
+    const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }).catch(() => null);
     if (channel?.serverId) {
       const participants = await getVoiceParticipants(channelId);
-      io.to(`server:${channel.serverId}`).emit('server-voice-participants', { serverId: channel.serverId, channelId, participants });
+      void emitVoicePresenceScoped({ io, channel: { id: channelId, serverId: channel.serverId, isPrivate: channel.isPrivate, categoryId: channel.categoryId, ageRestricted: channel.ageRestricted }, event: 'server-voice-participants', payload: { serverId: channel.serverId, channelId, participants } });
     }
   }, INACTIVITY_TIMEOUT_MS);
   cappedTimerMapSet(voiceInactivityTimers, channelId, timer, MAX_TIMER_MAP_SIZE, clearTimeout);
@@ -628,10 +629,10 @@ export function startVoiceHealthCheck() {
             }
           }
           if (cleaned) {
-            const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } }).catch(() => null);
+            const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }).catch(() => null);
             if (channel?.serverId) {
               const participants = await getVoiceParticipants(channelId);
-              io.to(`server:${channel.serverId}`).emit('server-voice-participants', { serverId: channel.serverId, channelId, participants });
+              void emitVoicePresenceScoped({ io, channel: { id: channelId, serverId: channel.serverId, isPrivate: channel.isPrivate, categoryId: channel.categoryId, ageRestricted: channel.ageRestricted }, event: 'server-voice-participants', payload: { serverId: channel.serverId, channelId, participants } });
             }
           }
           await checkVoiceInactivity(channelId);

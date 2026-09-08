@@ -10,12 +10,14 @@ interface LoginPageProps {
   onLogin: (user: AuthUser) => void;
 }
 
+type EnrollNeeds = Array<'totp' | 'passkey'>;
+
 type Phase =
   | { kind: 'login' }
   | { kind: 'mfa'; mfaToken: string }
   | { kind: 'passkey'; passkeyToken: string }
-  | { kind: 'enroll-totp-setup'; enrollmentToken: string; mfaAlreadyEnabled: boolean; passkeyCount: number }
-  | { kind: 'enroll-totp-show'; enrollmentToken: string; setupToken: string; qrCodeDataUrl: string; uri: string }
+  | { kind: 'enroll-totp-setup'; enrollmentToken: string; needs: EnrollNeeds }
+  | { kind: 'enroll-totp-show'; enrollmentToken: string; setupToken: string; qrCodeDataUrl: string; uri: string; needs: EnrollNeeds }
   | { kind: 'enroll-passkey'; enrollmentToken: string }
   | { kind: 'enroll-complete'; enrollmentToken: string };
 
@@ -36,6 +38,19 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     setError('');
   };
 
+  const routeEnrollment = (enrollmentToken: string, needs: EnrollNeeds | undefined, legacyMfaEnabled?: boolean) => {
+    // New backends send `needs`; old backends only flag mfaEnabled on the
+    // login response. Fall back so the panel works against both.
+    const resolved: EnrollNeeds = needs && needs.length > 0
+      ? needs
+      : legacyMfaEnabled ? ['passkey'] : ['totp', 'passkey'];
+    if (resolved.includes('totp')) {
+      setPhase({ kind: 'enroll-totp-setup', enrollmentToken, needs: resolved });
+    } else {
+      setPhase({ kind: 'enroll-passkey', enrollmentToken });
+    }
+  };
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -43,17 +58,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     try {
       const result = await adminApi.login(email, password);
       if (result.enrollmentRequired && result.enrollmentToken) {
-        // Route into enrollment wizard. Skip TOTP setup if already enabled.
-        if (result.mfaEnabled) {
-          setPhase({ kind: 'enroll-passkey', enrollmentToken: result.enrollmentToken });
-        } else {
-          setPhase({
-            kind: 'enroll-totp-setup',
-            enrollmentToken: result.enrollmentToken,
-            mfaAlreadyEnabled: !!result.mfaEnabled,
-            passkeyCount: result.passkeyCount ?? 0,
-          });
-        }
+        routeEnrollment(result.enrollmentToken, result.needs, result.mfaEnabled);
+        setPassword('');
+      } else if (result.passkeyRequired && result.passkeyToken) {
+        // Passkey-only account (no TOTP): prove the passkey first, then the
+        // backend routes into TOTP enrollment.
+        setPhase({ kind: 'passkey', passkeyToken: result.passkeyToken });
         setPassword('');
       } else if (result.mfaRequired && result.mfaToken) {
         setPhase({ kind: 'mfa', mfaToken: result.mfaToken });
@@ -75,9 +85,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     setError('');
     setLoading(true);
     try {
-      const { passkeyToken } = await adminApi.verifyMfaLogin(phase.mfaToken, mfaCode);
-      setPhase({ kind: 'passkey', passkeyToken });
-      setMfaCode('');
+      const result = await adminApi.verifyMfaLogin(phase.mfaToken, mfaCode);
+      if (result.enrollmentRequired && result.enrollmentToken) {
+        routeEnrollment(result.enrollmentToken, result.needs);
+        setMfaCode('');
+      } else if (result.passkeyRequired && result.passkeyToken) {
+        setPhase({ kind: 'passkey', passkeyToken: result.passkeyToken });
+        setMfaCode('');
+      } else {
+        throw new Error('Unexpected verification response');
+      }
     } catch (err: any) {
       setError(err.message || 'Verification failed');
       if (err.message?.includes('expired') || err.message?.includes('already used')) {
@@ -99,9 +116,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         const { options, challengeToken } = await adminApi.passkeyLoginBegin(phase.passkeyToken);
         const assertion = await startAuthentication({ optionsJSON: options });
         if (cancelled) return;
-        const { user, token } = await adminApi.passkeyLoginFinish(challengeToken, assertion);
-        adminApi.setToken(token);
-        onLogin(user);
+        const result = await adminApi.passkeyLoginFinish(challengeToken, assertion);
+        if (cancelled) return;
+        if (result.enrollmentRequired && result.enrollmentToken) {
+          routeEnrollment(result.enrollmentToken, result.needs);
+        } else if (result.token && result.user) {
+          adminApi.setToken(result.token);
+          onLogin(result.user);
+        } else {
+          throw new Error('Unexpected passkey response');
+        }
       } catch (err: any) {
         if (cancelled) return;
         setError(err?.message || 'Passkey authentication failed');
@@ -118,7 +142,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     setLoading(true);
     try {
       const { setupToken, uri, qrCodeDataUrl } = await adminApi.enrollmentSetupMfa(phase.enrollmentToken);
-      setPhase({ kind: 'enroll-totp-show', enrollmentToken: phase.enrollmentToken, setupToken, uri, qrCodeDataUrl });
+      setPhase({ kind: 'enroll-totp-show', enrollmentToken: phase.enrollmentToken, setupToken, uri, qrCodeDataUrl, needs: phase.needs });
     } catch (err: any) {
       setError(err?.message || 'Failed to start MFA setup');
     } finally {
@@ -134,7 +158,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     try {
       await adminApi.enrollmentEnableMfa(phase.enrollmentToken, phase.setupToken, mfaCode);
       setMfaCode('');
-      setPhase({ kind: 'enroll-passkey', enrollmentToken: phase.enrollmentToken });
+      if (phase.needs.includes('passkey')) {
+        setPhase({ kind: 'enroll-passkey', enrollmentToken: phase.enrollmentToken });
+      } else {
+        setPhase({ kind: 'enroll-complete', enrollmentToken: phase.enrollmentToken });
+      }
     } catch (err: any) {
       setError(err?.message || 'Invalid code');
     } finally {
@@ -269,7 +297,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             {phase.kind === 'enroll-totp-setup' && (
               <div className="space-y-5">
                 <p className="text-sm text-slate-400">
-                  Admin access now requires an authenticator app and a passkey. We'll walk through both now.
+                  {phase.needs.includes('passkey')
+                    ? "Admin access now requires an authenticator app and a passkey. We'll walk through both now."
+                    : "Admin access now requires an authenticator app. Your passkey is already set up, so we'll just add the authenticator now."}
                 </p>
                 <PrimaryButton loading={loading} disabled={loading} onClick={handleTotpSetupBegin}>
                   Start TOTP setup

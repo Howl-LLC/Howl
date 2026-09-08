@@ -10,13 +10,15 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { validate } from '../middleware/validate.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import { startStageSchema, editStageSchema, stageUserActionSchema, stageLowerHandSchema } from '../schemas.js';
-import { getParam, hasPermission, loadPermissionContext, AUTHOR_USER_SELECT, getEffectivePlan } from '../utils.js';
+import { getParam, hasPermission, loadPermissionContext, assertChannelVisible, assertChannelReadable, AUTHOR_USER_SELECT, getEffectivePlan } from '../utils.js';
 import { logger } from '../logger.js';
 import { createAuditLog } from './serverSettings.js';
 import { powerUpTier } from './serverHelpers.js';
 import { cancelGraceEnd } from '../stageGraceTimers.js';
 import { getClientIp } from '../utils/clientIp.js';
 import { rotateStageLeaderAndKey } from '../services/voiceE2eeRotation.js';
+import { emitStageEventScoped, loadChannelNotifyGate, filterUsersWhoCanViewChannel } from '../utils/channelVisibility.js';
+import { denyIfAgeGated } from '../utils/ageGate.js';
 
 const log = logger.child({ module: 'stages' });
 
@@ -292,7 +294,7 @@ router.post(
     const channelId = getParam(req, 'channelId');
 
     const [channel, member, permCtx] = await Promise.all([
-      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, type: true } }),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, type: true, ageRestricted: true } }),
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
@@ -303,6 +305,13 @@ router.post(
     if (channel.type !== 'stage') return res.status(400).json({ error: 'Not a stage channel' });
     if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (!hasPermission(permCtx,'manageStages')) return res.status(403).json({ error: 'Missing manageStages permission' });
+    // Write-path age gate: a minor must not host / moderate /
+    // participate in an age-restricted stage. Mirrors the messages.ts moderator +
+    // send-path denyIfAgeGated (which gates both pin/unpin and the send path).
+    // Runs after the manageStages check; short-circuits on non-age-restricted
+    // channels (no DOB query on the hot path).
+    const ageDeny = await denyIfAgeGated(channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
 
     // Check no active session (Redis SETNX pattern)
     const existingSessionId = await getStageSessionId(channelId);
@@ -371,33 +380,50 @@ router.post(
 
     const io = req.app.get('io') as import('socket.io').Server | undefined;
     io?.to(`channel:${channelId}`).emit('stage-started', response);
-    io?.to(`server:${serverId}`).emit('stage-started', response);
-
-    // Notify server members about the new stage (fire-and-forget)
+    // The three `server:` legs (existence + topic, activity ping,
+    // and the speaker roster) must not fan out to non-viewers of a private /
+    // restricted stage channel — route them through the visibility gate.
     if (io) {
-      io.to(`server:${serverId}`).emit('server-channel-activity', {
+      void emitStageEventScoped({ io, channelId, serverId, event: 'stage-started', payload: response });
+      void emitStageEventScoped({ io, channelId, serverId, event: 'server-channel-activity', payload: {
         serverId, channelId, messageId: session.id, mentionUserIds: [], stageStarted: true,
-      });
+      } });
+      // Broadcast stage speakers to server room for activity panel
+      void emitStageEventScoped({ io, channelId, serverId, event: 'server-stage-participants', payload: {
+        serverId,
+        channelId,
+        participants: response.speakers.map((s: { userId: string; username: string; avatar: string | null }) => ({
+          userId: s.userId, username: s.username, avatar: s.avatar ?? undefined,
+        })),
+      } });
     }
-    // Broadcast stage speakers to server room for activity panel
-    io?.to(`server:${serverId}`).emit('server-stage-participants', {
-      serverId,
-      channelId,
-      participants: response.speakers.map((s: { userId: string; username: string; avatar: string | null }) => ({
-        userId: s.userId, username: s.username, avatar: s.avatar ?? undefined,
-      })),
-    });
     (async () => {
-      const [chInfo, members] = await Promise.all([
+      const [chInfo, members, gate] = await Promise.all([
         prisma.channel.findUnique({ where: { id: channelId }, select: { name: true } }),
         prisma.serverMember.findMany({ where: { serverId }, select: { userId: true }, take: 1000 }),
+        loadChannelNotifyGate(channelId),
       ]);
+      if (!gate) return; // channel deleted mid-flight → do not write durable rows (fail closed)
       const channelName = chInfo?.name ?? 'stage';
       const memberIds = members.map(m => m.userId).filter(uid => uid !== req.userId);
       if (memberIds.length === 0) return;
 
+      // Durable `stage_started` rows persist 90d and are readable
+      // via GET /notifications, so a private / restricted stage must not notify
+      // non-viewers. Provably-open public channel → keep the full membership
+      // (unchanged); otherwise intersect with who can VIEW the channel and drop
+      // minors on an age-restricted channel.
+      let recipientIds = memberIds;
+      if (!gate.provablyOpen) {
+        const viewers = await filterUsersWhoCanViewChannel({
+          gate, candidateUserIds: memberIds, dropMinors: gate.channel.ageRestricted,
+        });
+        recipientIds = memberIds.filter(uid => viewers.has(uid));
+      }
+      if (recipientIds.length === 0) return;
+
       prisma.notification.createMany({
-        data: memberIds.map(uid => ({
+        data: recipientIds.map(uid => ({
           userId: uid, serverId, channelId, type: 'stage_started',
           title: 'Stage started',
           body: session.topic ? `${session.topic} · ${channelName}` : channelName,
@@ -424,15 +450,22 @@ router.post(
     const serverId = getParam(req, 'serverId');
     const channelId = getParam(req, 'channelId');
 
-    const [member, permCtx] = await Promise.all([
+    const [member, permCtx, channel] = await Promise.all([
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
       }),
       loadPermissionContext(req.userId, serverId),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { ageRestricted: true } }),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (!hasPermission(permCtx,'manageStages')) return res.status(403).json({ error: 'Missing manageStages permission' });
+    // Write-path age gate: a minor must not moderate an
+    // age-restricted stage (mirrors messages.ts moderator denyIfAgeGated).
+    if (channel) {
+      const ageDeny = await denyIfAgeGated(channel, req.userId);
+      if (ageDeny) return res.status(403).json(ageDeny);
+    }
 
     const sessionId = await getStageSessionId(channelId);
     if (!sessionId) return res.status(404).json({ error: 'No active stage session' });
@@ -445,11 +478,13 @@ router.post(
 
     const io = req.app.get('io') as import('socket.io').Server | undefined;
     io?.to(`channel:${channelId}`).emit('stage-ended', { sessionId, channelId });
-    io?.to(`server:${serverId}`).emit('stage-ended', { sessionId, channelId });
-    // Clear stage from activity panel
-    io?.to(`server:${serverId}`).emit('server-stage-participants', {
-      serverId, channelId, participants: [],
-    });
+    if (io) {
+      void emitStageEventScoped({ io, channelId, serverId, event: 'stage-ended', payload: { sessionId, channelId } });
+      // Clear stage from activity panel
+      void emitStageEventScoped({ io, channelId, serverId, event: 'server-stage-participants', payload: {
+        serverId, channelId, participants: [],
+      } });
+    }
 
     await createAuditLog(serverId, req.userId, 'stage_end', 'channel', channelId, { sessionId }).catch(() => {});
     log.info({ userId: req.userId, sessionId, channelId }, 'stage ended');
@@ -469,15 +504,23 @@ router.patch(
     const serverId = getParam(req, 'serverId');
     const channelId = getParam(req, 'channelId');
 
-    const [member, permCtx] = await Promise.all([
+    const [member, permCtx, channel] = await Promise.all([
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
       }),
       loadPermissionContext(req.userId, serverId),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { ageRestricted: true } }),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (!hasPermission(permCtx,'manageStages')) return res.status(403).json({ error: 'Missing manageStages permission' });
+    // Write-path age gate: this handler echoes the session's
+    // topic + speaker/audience roster (buildStageResponse) — 18+ content a minor
+    // moderator must not retrieve. Mirrors the messages.ts moderator-PATCH gate.
+    if (channel) {
+      const ageDeny = await denyIfAgeGated(channel, req.userId);
+      if (ageDeny) return res.status(403).json(ageDeny);
+    }
 
     const sessionId = await getStageSessionId(channelId);
     if (!sessionId) return res.status(404).json({ error: 'No active stage session' });
@@ -514,10 +557,31 @@ router.get(
     const serverId = getParam(req, 'serverId');
     const channelId = getParam(req, 'channelId');
 
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
+    const [member, channel, permCtx, chOverrides] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }),
+      loadPermissionContext(req.userId, serverId),
+      prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+    ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    // this file never loaded the Channel row, so a private stage's topic +
+    // speaker roster leaked to any member. Visibility ONLY — the live session this
+    // returns is exactly what `stage-join-audience` exposes, and that gate
+    // (socketHandlers/stages.ts) requires viewChannels, NOT readMessageHistory.
+    // Gating this on readMessageHistory would refuse a member who can legitimately
+    // join and listen. (History below stays readMessageHistory-gated: it is content.)
+    if (!channel || channel.serverId !== serverId) return res.status(404).json({ error: 'Channel not found' });
+    const catOverrides = channel.categoryId
+      ? await prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
+      : [];
+    const gate = assertChannelVisible(permCtx, channel, chOverrides, catOverrides);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+    // A minor must not read an age-restricted stage's live
+    // session (topic + speaker roster). Mirrors the `stage-join-audience` gate.
+    const ageDeny = await denyIfAgeGated(channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
 
     const sessionId = await getStageSessionId(channelId);
     if (!sessionId) return res.json(null);
@@ -541,10 +605,26 @@ router.get(
     const serverId = getParam(req, 'serverId');
     const channelId = getParam(req, 'channelId');
 
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
+    const [member, channel, permCtx, chOverrides] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }),
+      loadPermissionContext(req.userId, serverId),
+      prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+    ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    // a private stage's past sessions (topics, timestamps) leaked to any member.
+    if (!channel || channel.serverId !== serverId) return res.status(404).json({ error: 'Channel not found' });
+    const catOverrides = channel.categoryId
+      ? await prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
+      : [];
+    const gate = assertChannelReadable(permCtx, channel, chOverrides, catOverrides);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+    // Past stage topics are content — a minor must not read an
+    // age-restricted stage's history. Mirrors the read-path age gate.
+    const ageDeny = await denyIfAgeGated(channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
 
     const sessions = await prisma.stageSession.findMany({
       where: { channelId, serverId, endedAt: { not: null } },
@@ -579,15 +659,22 @@ router.post(
     const channelId = getParam(req, 'channelId');
     const { userId: targetUserId } = req.body as { userId: string };
 
-    const [member, permCtx] = await Promise.all([
+    const [member, permCtx, channel] = await Promise.all([
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
       }),
       loadPermissionContext(req.userId, serverId),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { ageRestricted: true } }),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (!hasPermission(permCtx,'manageStages')) return res.status(403).json({ error: 'Missing manageStages permission' });
+    // Write-path age gate: a minor must not moderate an
+    // age-restricted stage (mirrors messages.ts moderator denyIfAgeGated).
+    if (channel) {
+      const ageDeny = await denyIfAgeGated(channel, req.userId);
+      if (ageDeny) return res.status(403).json(ageDeny);
+    }
 
     const sessionId = await getStageSessionId(channelId);
     if (!sessionId) return res.status(404).json({ error: 'No active stage session' });
@@ -615,15 +702,22 @@ router.post(
     const channelId = getParam(req, 'channelId');
     const { userId: targetUserId } = req.body as { userId: string };
 
-    const [member, permCtx] = await Promise.all([
+    const [member, permCtx, channel] = await Promise.all([
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
       }),
       loadPermissionContext(req.userId, serverId),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { ageRestricted: true } }),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (!hasPermission(permCtx,'manageStages')) return res.status(403).json({ error: 'Missing manageStages permission' });
+    // Write-path age gate: a minor must not moderate an
+    // age-restricted stage (mirrors messages.ts moderator denyIfAgeGated).
+    if (channel) {
+      const ageDeny = await denyIfAgeGated(channel, req.userId);
+      if (ageDeny) return res.status(403).json(ageDeny);
+    }
 
     const sessionId = await getStageSessionId(channelId);
     if (!sessionId) return res.status(404).json({ error: 'No active stage session' });
@@ -654,9 +748,9 @@ router.post(
 
     // Update activity panel with full speaker list
     const updatedSpeakers = await getActiveStageSpeakers(channelId);
-    io?.to(`server:${serverId}`).emit('server-stage-participants', {
+    if (io) void emitStageEventScoped({ io, channelId, serverId, event: 'server-stage-participants', payload: {
       serverId, channelId, participants: updatedSpeakers,
-    });
+    } });
 
     // E2EE: Speaker removed — trigger key rotation for all remaining participants.
     // Shared with the graceful stage-leave handler and the abrupt-disconnect
@@ -679,14 +773,32 @@ router.post(
     const serverId = getParam(req, 'serverId');
     const channelId = getParam(req, 'channelId');
 
-    const [member, permCtx] = await Promise.all([
+    const [member, permCtx, channel, chOverrides] = await Promise.all([
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
       }),
       loadPermissionContext(req.userId, serverId),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }),
+      prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    // (write): hide raising a hand into a private stage. Visibility only
+    // (matches the send/react convention); the requestToSpeak action check runs
+    // after. Gate BEFORE requestToSpeak so a non-viewer gets 404, not a 403 that
+    // would confirm the channel exists.
+    if (!channel || channel.serverId !== serverId) return res.status(404).json({ error: 'Channel not found' });
+    const catOverrides = channel.categoryId
+      ? await prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
+      : [];
+    const vis = assertChannelVisible(permCtx, channel, chOverrides, catOverrides);
+    if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
+    // Write-path age gate: raising a hand is participating in
+    // the stage — a minor must not do so in an age-restricted stage. After the
+    // visibility gate (so a non-viewer still gets 404, not an age oracle) and
+    // before the requestToSpeak action check, mirroring the read-path ordering.
+    const ageDeny = await denyIfAgeGated(channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
     if (!hasPermission(permCtx,'requestToSpeak')) return res.status(403).json({ error: 'Missing requestToSpeak permission' });
 
     const sessionId = await getStageSessionId(channelId);
@@ -723,16 +835,31 @@ router.post(
     const { userId: targetUserId } = req.body as { userId?: string };
     const lowerUserId = targetUserId ?? req.userId;
 
+    // (write): the self-lower path had NO auth at all — not even membership.
+    // On a PUBLIC stage `assertChannelVisible` is vacuous (public is always
+    // visible), so visibility alone left a non-member of the server able to probe
+    // the session, refresh its TTL and emit stage-hand-lowered. Check membership
+    // FIRST (mirrors hand/raise), then visibility, both hoisted above the
+    // self/others branch so they cover EVERY caller including the self-lower path.
+    const [member, channel, permCtx, chOverrides] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, isPrivate: true, categoryId: true } }),
+      loadPermissionContext(req.userId, serverId),
+      prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+    ]);
+    if (!member) return res.status(403).json({ error: 'Not a server member' });
+    if (!channel || channel.serverId !== serverId) return res.status(404).json({ error: 'Channel not found' });
+    const catOverrides = channel.categoryId
+      ? await prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
+      : [];
+    const vis = assertChannelVisible(permCtx, channel, chOverrides, catOverrides);
+    if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
+
     // Self-lower is always allowed; lowering others requires manageStages
     if (lowerUserId !== req.userId) {
-      const [member, permCtx] = await Promise.all([
-        prisma.serverMember.findUnique({
-          where: { userId_serverId: { userId: req.userId, serverId } },
-          include: { serverRole: true },
-        }),
-        loadPermissionContext(req.userId, serverId),
-      ]);
-      if (!member || !permCtx || !hasPermission(permCtx, 'manageStages')) {
+      if (!permCtx || !hasPermission(permCtx, 'manageStages')) {
         return res.status(403).json({ error: 'Missing manageStages permission' });
       }
     }
@@ -763,15 +890,22 @@ router.post(
     const channelId = getParam(req, 'channelId');
     const { userId: targetUserId } = req.body as { userId: string };
 
-    const [member, permCtx] = await Promise.all([
+    const [member, permCtx, channel] = await Promise.all([
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
       }),
       loadPermissionContext(req.userId, serverId),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { ageRestricted: true } }),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (!hasPermission(permCtx,'manageStages')) return res.status(403).json({ error: 'Missing manageStages permission' });
+    // Write-path age gate: a minor must not moderate an
+    // age-restricted stage (mirrors messages.ts moderator denyIfAgeGated).
+    if (channel) {
+      const ageDeny = await denyIfAgeGated(channel, req.userId);
+      if (ageDeny) return res.status(403).json(ageDeny);
+    }
 
     const sessionId = await getStageSessionId(channelId);
     if (!sessionId) return res.status(404).json({ error: 'No active stage session' });
@@ -811,9 +945,9 @@ router.post(
     });
     // Update activity panel with full speaker list
     const updatedSpeakers = await getActiveStageSpeakers(channelId);
-    io?.to(`server:${serverId}`).emit('server-stage-participants', {
+    if (io) void emitStageEventScoped({ io, channelId, serverId, event: 'server-stage-participants', payload: {
       serverId, channelId, participants: updatedSpeakers,
-    });
+    } });
 
     res.json({ success: true });
   }),
@@ -830,15 +964,23 @@ router.post(
     const serverId = getParam(req, 'serverId');
     const channelId = getParam(req, 'channelId');
 
-    const [member, permCtx] = await Promise.all([
+    const [member, permCtx, channel] = await Promise.all([
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
       }),
       loadPermissionContext(req.userId, serverId),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { ageRestricted: true } }),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (!hasPermission(permCtx,'manageStages')) return res.status(403).json({ error: 'Missing manageStages permission' });
+    // Write-path age gate: joining as a speaker is
+    // participating in the stage — a minor must not do so in an age-restricted
+    // stage (mirrors messages.ts send-path denyIfAgeGated).
+    if (channel) {
+      const ageDeny = await denyIfAgeGated(channel, req.userId);
+      if (ageDeny) return res.status(403).json(ageDeny);
+    }
 
     const sessionId = await getStageSessionId(channelId);
     if (!sessionId) return res.status(404).json({ error: 'No active stage session' });
@@ -879,9 +1021,9 @@ router.post(
     io?.to(`channel:${channelId}`).emit('stage-audience-left', { userId: req.userId, channelId });
 
     const updatedSpeakers = await getActiveStageSpeakers(channelId);
-    io?.to(`server:${serverId}`).emit('server-stage-participants', {
+    if (io) void emitStageEventScoped({ io, channelId, serverId, event: 'server-stage-participants', payload: {
       serverId, channelId, participants: updatedSpeakers,
-    });
+    } });
 
     res.json({ success: true });
   }),
@@ -898,10 +1040,25 @@ router.post(
     const serverId = getParam(req, 'serverId');
     const channelId = getParam(req, 'channelId');
 
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
+    const [member, channel, permCtx, chOverrides] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, isPrivate: true, categoryId: true } }),
+      loadPermissionContext(req.userId, serverId),
+      prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+    ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    // (write): this handler never loaded the Channel row, so it never
+    // cross-checked channelId against serverId — a member of ANY server could probe
+    // another server's private stage session (404-vs-400 oracle) by passing its
+    // channelId with their own serverId. Cross-check + apply the visibility gate.
+    if (!channel || channel.serverId !== serverId) return res.status(404).json({ error: 'Channel not found' });
+    const catOverrides = channel.categoryId
+      ? await prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
+      : [];
+    const vis = assertChannelVisible(permCtx, channel, chOverrides, catOverrides);
+    if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
 
     const sessionId = await getStageSessionId(channelId);
     if (!sessionId) return res.status(404).json({ error: 'No active stage session' });
@@ -934,9 +1091,9 @@ router.post(
     }
 
     const updatedSpeakers = await getActiveStageSpeakers(channelId);
-    io?.to(`server:${serverId}`).emit('server-stage-participants', {
+    if (io) void emitStageEventScoped({ io, channelId, serverId, event: 'server-stage-participants', payload: {
       serverId, channelId, participants: updatedSpeakers,
-    });
+    } });
 
     res.json({ success: true });
   }),

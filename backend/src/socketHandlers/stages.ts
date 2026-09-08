@@ -13,6 +13,8 @@ import { mintLiveKitAccessToken, resolveLiveKitRegionForServer } from '../servic
 import { scheduleGraceEnd, cancelGraceEnd } from '../stageGraceTimers.js';
 import { getIsShuttingDown } from '../shutdown.js';
 import { findUserVoiceChannel, removeVoiceParticipant, getVoiceParticipants, setVoiceReverseLookup, deleteVoiceOverride, findUserDmCall, removeDmCallParticipant, setDmCallReverseLookup, addDmCallDeclined, dmCallSize, getDmCallStartTime, deleteDmCallStartTime, removeUserFromAllStreams, clearOwnedStreams } from '../redis.js';
+import { emitStageEventScoped, emitVoicePresenceScoped } from '../utils/channelVisibility.js';
+import { denyIfAgeGated } from '../utils/ageGate.js';
 
 const MAX_TOTAL_PARTICIPANTS = 10_000;
 
@@ -32,7 +34,7 @@ export function registerStageHandlers(ctx: SocketContext): void {
 
       const channel = await prisma.channel.findUnique({
         where: { id: channelId },
-        select: { serverId: true, type: true, isPrivate: true, categoryId: true },
+        select: { serverId: true, type: true, isPrivate: true, categoryId: true, ageRestricted: true },
       });
       if (!channel || channel.type !== 'stage') { callAck({ ok: false, error: 'Not a stage channel' }); return; }
 
@@ -57,6 +59,14 @@ export function registerStageHandlers(ctx: SocketContext): void {
       } else if (!hasPermission(permCtx, 'viewChannels')) {
         callAck({ ok: false, error: 'No viewChannels permission' }); return;
       }
+      // A minor must not join an age-restricted stage. Runs
+      // AFTER the view gate (so it never leaks the ageRestricted flag to a
+      // non-viewer) and BEFORE any Redis membership write / token mint — the
+      // authoritative membership gate that keeps a minor out of the speaker /
+      // audience set (and thus out of the SFrame key distribution + the
+      // livekit-token Redis check). Mirrors join-channel's `denyIfAgeGated`.
+      const ageDeny = await denyIfAgeGated(channel, userId);
+      if (ageDeny) { callAck({ ok: false, error: ageDeny.message }); return; }
       // A timed-out member must not (re-)join a stage — mirrors the
       // join-voice-channel timeout gate (voice.ts), so the SFU eviction applied
       // on timeout cannot be trivially undone by re-joining + re-minting a token.
@@ -96,10 +106,10 @@ export function registerStageHandlers(ctx: SocketContext): void {
         ]);
         if (!getIsShuttingDown()) {
           io.to(`voice:${existingVoiceChannel}`).emit('voice-user-left', { userId });
-          const oldCh = await prisma.channel.findUnique({ where: { id: existingVoiceChannel }, select: { serverId: true } }).catch(() => null);
+          const oldCh = await prisma.channel.findUnique({ where: { id: existingVoiceChannel }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }).catch(() => null);
           if (oldCh?.serverId) {
             const vParts = await getVoiceParticipants(existingVoiceChannel);
-            io.to(`server:${oldCh.serverId}`).emit('server-voice-participants', { serverId: oldCh.serverId, channelId: existingVoiceChannel, participants: vParts });
+            void emitVoicePresenceScoped({ io, channel: { id: existingVoiceChannel, serverId: oldCh.serverId, isPrivate: oldCh.isPrivate, categoryId: oldCh.categoryId, ageRestricted: oldCh.ageRestricted }, event: 'server-voice-participants', payload: { serverId: oldCh.serverId, channelId: existingVoiceChannel, participants: vParts } });
             // Forward secrecy when leaving a voice channel to join a stage:
             // the user keeps the old channel's SFrame key, so rotate for the
             // members who remain (parity with the graceful leave-voice rotate).
@@ -218,9 +228,9 @@ export function registerStageHandlers(ctx: SocketContext): void {
           });
 
           const updatedSpeakers = await getActiveStageSpeakers(channelId);
-          io.to(`server:${channel.serverId}`).emit('server-stage-participants', {
+          void emitStageEventScoped({ io, channelId, serverId: channel.serverId, event: 'server-stage-participants', payload: {
             serverId: channel.serverId, channelId, participants: updatedSpeakers,
-          });
+          } });
 
           logger.info({ userId, channelId, event: 'stage-auto-promote-invited' }, 'invited user auto-promoted to speaker');
           const inlineToken = await mintStageToken(true);
@@ -272,9 +282,9 @@ export function registerStageHandlers(ctx: SocketContext): void {
         const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
         if (channel?.serverId) {
           const updatedSpeakers = await getActiveStageSpeakers(channelId);
-          io.to(`server:${channel.serverId}`).emit('server-stage-participants', {
+          void emitStageEventScoped({ io, channelId, serverId: channel.serverId, event: 'server-stage-participants', payload: {
             serverId: channel.serverId, channelId, participants: updatedSpeakers,
-          });
+          } });
         }
 
         // Trigger E2EE key rotation when a speaker leaves (forward secrecy).

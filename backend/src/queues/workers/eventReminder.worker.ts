@@ -13,6 +13,7 @@ import { redisConnection, queuesEnabled } from '../connection.js';
 import { prisma } from '../../db.js';
 import { logger } from '../../logger.js';
 import { getNextOccurrenceAfter } from '../../utils/recurrence.js';
+import { loadChannelNotifyGate, filterUsersWhoCanViewChannel } from '../../utils/channelVisibility.js';
 import type { Server as IOServer } from 'socket.io';
 
 const log = logger.child({ module: 'worker:event-reminder' });
@@ -266,6 +267,22 @@ async function processJob(_job: Job): Promise<void> {
         const roleMemberIds = roleMembers.map(m => m.userId);
         const combined = new Set([...targetUserIds, ...roleMemberIds]);
         targetUserIds = [...combined];
+      }
+
+      // the reminder can target a PRIVATE channel (reminderChannelId is
+      // validated only as a text channel on the server, not for the creator's
+      // view access), and the notification carries that channelId + a deep link.
+      // Intersect recipients with who can VIEW the channel unless it is provably
+      // open, and drop minors for an age-gated channel (this path has no age
+      // filter of its own). Fail closed if the channel is gone.
+      if (targetUserIds.length > 0) {
+        const gate = await loadChannelNotifyGate(channelId);
+        if (!gate) {
+          targetUserIds = [];
+        } else if (!gate.provablyOpen) {
+          const viewers = await filterUsersWhoCanViewChannel({ gate, candidateUserIds: targetUserIds, dropMinors: gate.channel.ageRestricted });
+          targetUserIds = targetUserIds.filter(uid => viewers.has(uid));
+        }
       }
 
       if (targetUserIds.length > 0) {

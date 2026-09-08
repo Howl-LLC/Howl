@@ -6,6 +6,7 @@ import { logger } from './logger.js';
 import { clearStageState, getStageSessionId, getSetSize } from './routes/stages.js';
 import { getIsShuttingDown } from './shutdown.js';
 import { cappedTimerMapSet } from './socketHandlers/infrastructure.js';
+import { emitStageEventScoped } from './utils/channelVisibility.js';
 
 /**
  * Stage grace-period auto-end.
@@ -71,10 +72,10 @@ async function endStageCore(channelId: string, io: IOServer): Promise<void> {
   }).catch(() => null);
   if (ch?.serverId && !getIsShuttingDown()) {
     io.to(`channel:${channelId}`).emit('stage-ended', { sessionId, channelId });
-    io.to(`server:${ch.serverId}`).emit('stage-ended', { sessionId, channelId });
-    io.to(`server:${ch.serverId}`).emit('server-stage-participants', {
+    void emitStageEventScoped({ io, channelId, serverId: ch.serverId, event: 'stage-ended', payload: { sessionId, channelId } });
+    void emitStageEventScoped({ io, channelId, serverId: ch.serverId, event: 'server-stage-participants', payload: {
       serverId: ch.serverId, channelId, participants: [],
-    });
+    } });
   }
   logger.info({ channelId, sessionId, event: 'stage-grace-ended' }, 'stage ended after grace period');
 }

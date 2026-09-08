@@ -41,6 +41,7 @@ import { logger } from '../logger.js';
 import { decryptSecret } from '../services/mfaCrypto.js';
 import { createRateLimitStore, RATE_LIMIT_DEFAULTS } from '../rateLimitStore.js';
 import { markTokenUsedOnce } from '../utils/singleUseToken.js';
+import { setEnrollCeremonyMarker, getEnrollCeremonyMarker, mintAdminEnrollmentToken, type EnrollFactor } from '../utils/adminEnrollment.js';
 
 const log = logger.child({ module: 'adminPasskey' });
 
@@ -151,6 +152,11 @@ const passkeyLoginLimiter = rateLimit({ ...RATE_LIMIT_DEFAULTS,
 
 router.post('/passkey/register/begin', passkeyWriteLimiter, authenticateAdminOrEnrollment, async (req: AdminAuthRequest, res: Response) => {
   try {
+    // an enrollment token may only touch the factors it needs.
+    if (req.enrollment && !req.enrollment.needs.includes('passkey')) {
+      return res.status(401).json({ error: 'Invalid token scope' });
+    }
+
     const admin = await prisma.adminUser.findUnique({
       where: { id: req.adminId! },
       select: { id: true, username: true, passkeys: true },
@@ -190,6 +196,11 @@ router.post('/passkey/register/begin', passkeyWriteLimiter, authenticateAdminOrE
 
 router.post('/passkey/register/finish', passkeyWriteLimiter, authenticateAdminOrEnrollment, validate(adminPasskeyRegisterFinishSchema), async (req: AdminAuthRequest, res: Response) => {
   try {
+    // an enrollment token may only touch the factors it needs.
+    if (req.enrollment && !req.enrollment.needs.includes('passkey')) {
+      return res.status(401).json({ error: 'Invalid token scope' });
+    }
+
     const { challengeToken, credential, friendlyName } = req.body as { challengeToken: string; credential: any; friendlyName: string };
 
     let decoded: { challenge: string; adminId: string; scope: string };
@@ -238,6 +249,10 @@ router.post('/passkey/register/finish', passkeyWriteLimiter, authenticateAdminOr
       },
     });
 
+    if (req.enrollment) {
+      await setEnrollCeremonyMarker(req.enrollment.jti, 'passkey', req.adminId!);
+    }
+
     log.info({ adminId: req.adminId }, 'Admin passkey registered');
     res.json({ success: true });
   } catch (err) {
@@ -253,7 +268,7 @@ router.post('/passkey/login/begin', passkeyLoginLimiter, validate(adminPasskeyLo
   try {
     const { passkeyToken } = req.body as { passkeyToken: string };
 
-    let decoded: { adminId: string; scope: string };
+    let decoded: { adminId: string; scope: string; totpVerified?: unknown };
     try {
       decoded = jwt.verify(passkeyToken, ADMIN_JWT_SECRET, { algorithms: ['HS256'] }) as typeof decoded;
     } catch (err: any) {
@@ -285,7 +300,14 @@ router.post('/passkey/login/begin', passkeyLoginLimiter, validate(adminPasskeyLo
     });
 
     const challengeToken = jwt.sign(
-      { challenge: options.challenge, adminId: decoded.adminId, scope: 'admin-passkey-auth' },
+      {
+        challenge: options.challenge,
+        adminId: decoded.adminId,
+        scope: 'admin-passkey-auth',
+        // Absent claim = false: fail closed for tokens minted by an old
+        // backend (5m TTL bounds the window).
+        totpVerified: decoded.totpVerified === true,
+      },
       ADMIN_JWT_SECRET,
       { expiresIn: '5m' },
     );
@@ -300,7 +322,7 @@ router.post('/passkey/login/finish', passkeyLoginLimiter, validate(adminPasskeyL
   try {
     const { challengeToken, credential } = req.body as { challengeToken: string; credential: any };
 
-    let decoded: { challenge: string; adminId: string; scope: string };
+    let decoded: { challenge: string; adminId: string; scope: string; totpVerified?: unknown };
     try {
       decoded = jwt.verify(challengeToken, ADMIN_JWT_SECRET, { algorithms: ['HS256'] }) as typeof decoded;
     } catch (err: any) {
@@ -348,9 +370,23 @@ router.post('/passkey/login/finish', passkeyLoginLimiter, validate(adminPasskeyL
 
     const admin = await prisma.adminUser.findUnique({
       where: { id: decoded.adminId },
-      select: { id: true, email: true, username: true, role: true, forcePasswordChange: true },
+      select: { id: true, email: true, username: true, role: true, forcePasswordChange: true, mfaEnabled: true, mfaTotpSecret: true },
     });
     if (!admin) return res.status(404).json({ error: 'Admin not found' });
+
+    if (decoded.totpVerified !== true) {
+      // Login-minted token (account had no TOTP): the passkey is proven,
+      // so mint the TOTP enrollment token. If the account gained TOTP
+      // since login (raced by a concurrent enrollment), password + passkey
+      // alone must not skip it.
+      const totpReady = admin.mfaEnabled && !!admin.mfaTotpSecret;
+      if (totpReady) {
+        return res.status(401).json({ error: 'Please log in again' });
+      }
+      const { enrollmentToken, needs } = mintAdminEnrollmentToken(admin.id, ['totp']);
+      log.info({ adminId: admin.id }, 'Admin passkey verified; TOTP enrollment required');
+      return res.json({ enrollmentRequired: true, enrollmentToken, needs });
+    }
 
     const token = await issueAdminSessionToken(admin.id, req, res);
     await prisma.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } }).catch(() => {});
@@ -408,7 +444,7 @@ router.post('/enrollment/complete', passkeyWriteLimiter, validate(adminEnrollmen
   try {
     const { enrollmentToken } = req.body as { enrollmentToken: string };
 
-    let decoded: { adminId: string; scope: string };
+    let decoded: { adminId: string; scope: string; jti?: unknown; needs?: unknown };
     try {
       decoded = jwt.verify(enrollmentToken, ADMIN_JWT_SECRET, { algorithms: ['HS256'] }) as typeof decoded;
     } catch (err: any) {
@@ -417,6 +453,26 @@ router.post('/enrollment/complete', passkeyWriteLimiter, validate(adminEnrollmen
     }
     if (decoded.scope !== 'admin-enrollment') {
       return res.status(401).json({ error: 'Invalid token scope' });
+    }
+    const { jti, needs } = decoded;
+    if (
+      typeof jti !== 'string' || jti.length === 0 ||
+      !Array.isArray(needs) || needs.length === 0 ||
+      !needs.every((n) => n === 'totp' || n === 'passkey')
+    ) {
+      return res.status(401).json({ error: 'Invalid token scope' });
+    }
+
+    // proof-of-ceremony: every needed factor must have been
+    // completed under THIS token. Checked BEFORE the single-use consume so
+    // a transient marker-store failure does not burn a legitimate token;
+    // the consume below still precedes session issuance, so concurrent
+    // redeems yield at most one session.
+    for (const factor of needs as EnrollFactor[]) {
+      const marker = await getEnrollCeremonyMarker(jti, factor);
+      if (typeof marker !== 'string' || marker !== decoded.adminId) {
+        return res.status(400).json({ error: 'Enrollment incomplete' });
+      }
     }
 
     // Single-use: consume the enrollment token
@@ -433,12 +489,11 @@ router.post('/enrollment/complete', passkeyWriteLimiter, validate(adminEnrollmen
     });
     if (!admin) return res.status(404).json({ error: 'Admin not found' });
 
+    // Defense-in-depth: the account must actually be fully enrolled too.
+    // Same refusal string as the marker gate so probing cannot tell the
+    // stages apart.
     if (!admin.mfaEnabled || admin._count.passkeys === 0) {
-      return res.status(400).json({
-        error: 'Enrollment incomplete',
-        mfaEnabled: admin.mfaEnabled,
-        passkeyCount: admin._count.passkeys,
-      });
+      return res.status(400).json({ error: 'Enrollment incomplete' });
     }
 
     const token = await issueAdminSessionToken(admin.id, req, res);

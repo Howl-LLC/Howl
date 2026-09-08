@@ -1149,10 +1149,12 @@ export async function invalidatePermissionContextForServer(serverId: string): Pr
 
 async function scanAndDeletePermsForServer(serverId: string): Promise<void> {
   if (!redis) return;
-  // ioredis auto-prepends keyPrefix `howl:` to SCAN MATCH and DEL args.
-  // scanStream uses the prefix transparently; we DEL the returned keys with
-  // the prefix stripped so ioredis doesn't double-prefix.
-  const pattern = `${PERMS_CACHE_PREFIX}${serverId}:*`;
+  // ioredis does NOT apply the `howl:` keyPrefix to a SCAN MATCH pattern (it only
+  // prefixes key *arguments*), so the pattern must include the prefix explicitly or
+  // it matches nothing — which leaves the perms cache stale for PERMS_TTL and makes
+  // permission revocation a silent no-op. SCAN returns fully-prefixed
+  // keys; DEL re-applies keyPrefix to its args, so strip `howl:` before deleting.
+  const pattern = `howl:${PERMS_CACHE_PREFIX}${serverId}:*`;
   const stream = redis.scanStream({ match: pattern, count: 200 });
   await new Promise<void>((resolve, reject) => {
     stream.on('data', (keys: string[]) => {

@@ -24,7 +24,7 @@ import { createRateLimitStore, RATE_LIMIT_DEFAULTS } from '../rateLimitStore.js'
 import { getClientIp } from '../utils/clientIp.js';
 import { getParam } from '../utils.js';
 import { powerUpTier } from './serverHelpers.js';
-import { hasPermission, loadPermissionContext, canSeeHiddenRoles, roleCarriesElevatedGrants } from '../utils/permissions.js';
+import { hasPermission, loadPermissionContext, canSeeHiddenRoles, roleCarriesElevatedGrants, effectivePosition } from '../utils/permissions.js';
 import { prisma } from '../db.js';
 import { redis, invalidatePermissionContext } from '../redis.js';
 import {
@@ -126,6 +126,32 @@ async function requireMember(
   const ctx = await loadPermissionContext(userId, serverId);
   if (!ctx) {
     res.status(403).json({ error: 'Not a member of this server' });
+    return false;
+  }
+  return true;
+}
+
+// Role-hierarchy gate for publishing a role into a picker.
+// Adding a role to a picker IS a grant path — every member who can see the entry
+// can claim the role — so the actor must outrank it, exactly as on the canonical
+// grant route (serverRoles.ts POST /roles/:roleId/members). Convention: LOWER
+// position number = HIGHER authority. The legacy owner string short-circuits (a
+// non-owner administrator stays gated, matching serverRoles). Reuses the
+// canonical 403 string so this adds no new oracle.
+async function requireRoleBelowActor(
+  userId: string,
+  serverId: string,
+  rolePosition: number,
+  res: Response,
+): Promise<boolean> {
+  const ctx = await loadPermissionContext(userId, serverId);
+  if (!ctx) {
+    res.status(403).json({ error: 'Not a member of this server' });
+    return false;
+  }
+  if (ctx.member.role?.toLowerCase() === 'owner') return true;
+  if (rolePosition <= effectivePosition(ctx)) {
+    res.status(403).json({ error: 'You cannot assign a role at or above your own position' });
     return false;
   }
   return true;
@@ -600,6 +626,9 @@ router.post('/:pickerId/categories/:catId/entries', authenticateToken, pickerMut
     if (await roleCarriesElevatedGrants(role.id, role.permissions)) {
       return res.status(400).json({ error: 'A role with moderation or management permissions cannot be in a picker' });
     }
+    // Offering a role here hands it to every member who can claim the entry,
+    // so apply the same hierarchy ceiling as the canonical grant route.
+    if (!await requireRoleBelowActor(req.userId!, serverId, role.position, res)) return;
 
     const cat = await prisma.rolePickerCategory.findFirst({
       where: { id: catId, pickerId, picker: { serverId } },

@@ -20,6 +20,18 @@ import { sendPushToUsers, pushEnabled } from '../../services/pushNotifications.j
 import { redis } from '../../redis.js';
 import type { Server as IOServer } from 'socket.io';
 import { isUnderEighteen } from '../../utils/discoveryFilters.js';
+import { loadChannelNotifyGate, filterUsersWhoCanViewChannel } from '../../utils/channelVisibility.js';
+
+/** Emit a payload to a set of `user:` rooms in bounded chunks — one Redis
+ *  publish per chunk, not one per recipient. Mirrors the presence branch's
+ * multi-room emit; used for scoped `notification-created` fanout when a
+ *  channel is not provably open to every member. */
+function emitToUserRooms(io: IOServer, userIds: string[], event: string, payload: unknown): void {
+  for (let i = 0; i < userIds.length; i += 500) {
+    const rooms = userIds.slice(i, i + 500).map((uid) => `user:${uid}`);
+    if (rooms.length > 0) io.to(rooms).emit(event, payload);
+  }
+}
 
 const log = logger.child({ module: 'worker:notification' });
 
@@ -115,7 +127,7 @@ export type NotificationJobData =
   | { type: 'dm'; dmChannelId: string; messageId: string; content: string; authorId: string; recipientIds: string[]; encrypted?: boolean }
   | { type: 'activity'; userId: string; activity: ActivityBroadcastPayload | null; secondaryActivity?: ActivityBroadcastPayload | null };
 
-async function processNotification(job: Job<NotificationJobData>) {
+export async function processNotification(job: Job<NotificationJobData>) {
   const parsed = notificationJobSchema.safeParse(job.data);
   if (!parsed.success) {
     log.error({ jobId: job.id, errors: parsed.error.flatten() }, 'invalid notification job payload');
@@ -171,28 +183,45 @@ async function processNotification(job: Job<NotificationJobData>) {
     const hasEveryone = matches.some(tag => tag === 'everyone' || tag === 'here');
 
     if (hasEveryone) {
-      // Emit to the server room — all members are already in it. Carries no
-      // message content (just channelId + messageId), so it is safe to fan
-      // out to minors even when the channel is age-gated; client-side they
-      // cannot enter the channel to see the content.
-      _io.to(`server:${data.serverId}`).emit('server-channel-activity', {
+      // Fetch author + channel info for push and persistent notifications.
+      // `ageRestricted` drives the per-recipient minor filter below — push
+      // bodies and Notification rows DO carry message content. `isPrivate`
+      // scopes the activity ping below. (This fetch was moved above the emit so
+      // the private-channel scoping can read isPrivate — nothing between the
+      // former emit site and here depended on emit-before-fetch ordering.)
+      // the notify gate carries the channel, its override chain and the
+      // @everyone role, and decides `provablyOpen` (every member is a viewer, so
+      // the cheap server-room broadcast is audience-equivalent). When NOT
+      // provably open, recipients are filtered to channel viewers per batch and
+      // the content-bearing emit is scoped away from the server room.
+      const [authorUser, channelMeta, gate] = await Promise.all([
+        prisma.user.findUnique({ where: { id: data.authorId }, select: { username: true } }),
+        prisma.channel.findUnique({ where: { id: data.channelId }, select: { name: true } }),
+        loadChannelNotifyGate(data.channelId),
+      ]);
+      const authorName = authorUser?.username ?? 'Someone';
+      const channelName = channelMeta?.name ?? 'channel';
+      const channelAgeRestricted = gate?.channel.ageRestricted ?? false;
+      const provablyOpen = gate?.provablyOpen ?? false;
+      const preview = data.content.length > 200 ? data.content.slice(0, 200) + '…' : data.content;
+
+      // Fail CLOSED if the channel is gone (deleted in the window between enqueue
+      // and processing): loadChannelNotifyGate returns null (it only throws on a
+      // DB error), so proceeding would skip the view + age filter and fan the
+      // preview out to every member. Mirrors the inline / thread / eventReminder
+      // sites, which all return on a null gate.
+      if (!gate) return;
+
+      // Channel-activity ping. Carries no message content (just channelId +
+      // messageId), but the channelId itself must not reach non-viewers. +
+      // route to the server room only when provably open; otherwise (private
+      // OR baseline/override-restricted) route to the channel room (viewers only).
+      _io.to(provablyOpen ? `server:${data.serverId}` : `channel:${data.channelId}`).emit('server-channel-activity', {
         serverId: data.serverId,
         channelId: data.channelId,
         messageId: data.messageId,
         mentionUserIds: ['@everyone'],
       });
-
-      // Fetch author + channel info for push and persistent notifications.
-      // `ageRestricted` drives the per-recipient minor filter below — push
-      // bodies and Notification rows DO carry message content.
-      const [authorUser, channel] = await Promise.all([
-        prisma.user.findUnique({ where: { id: data.authorId }, select: { username: true } }),
-        prisma.channel.findUnique({ where: { id: data.channelId }, select: { name: true, ageRestricted: true } }),
-      ]);
-      const authorName = authorUser?.username ?? 'Someone';
-      const channelName = channel?.name ?? 'channel';
-      const channelAgeRestricted = !!channel?.ageRestricted;
-      const preview = data.content.length > 200 ? data.content.slice(0, 200) + '…' : data.content;
 
       // Filter out users who have this server in a muted folder
       let mutedUserIds = new Set<string>();
@@ -234,6 +263,14 @@ async function processNotification(job: Job<NotificationJobData>) {
             ages.filter(u => !isUnderEighteen(u.dateOfBirth)).map(u => u.id),
           );
           batchUserIds = batchUserIds.filter(uid => adults.has(uid));
+        }
+        // for a not-provably-open channel, keep only members who can VIEW
+        // it. Done here, per batch, BEFORE the push send below, so the preview
+        // never reaches a non-viewer via push, durable rows or the emit. Age was
+        // already applied above, so dropMinors is not repeated here.
+        if (!provablyOpen && batchUserIds.length > 0) {
+          const viewers = await filterUsersWhoCanViewChannel({ gate, candidateUserIds: batchUserIds, dropMinors: false });
+          batchUserIds = batchUserIds.filter(uid => viewers.has(uid));
         }
         allMemberIds.push(...batchUserIds);
 
@@ -293,8 +330,12 @@ async function processNotification(job: Job<NotificationJobData>) {
           }
         }
 
-        // Emit to server room — all members are already joined, avoids N per-user Redis pub/sub messages
-        _io.to(`server:${data.serverId}`).emit('notification-created', {
+        // the payload carries the channel name + 200-char body preview, so
+        // it must not reach non-viewers. Provably-open channels keep the single
+        // server-room broadcast (all members are viewers; avoids N per-user Redis
+        // pub/sub messages). Otherwise emit to the viewer set (allMemberIds is
+        // already view- and age-filtered) in bounded chunks, one publish each.
+        const notifPayload = {
           serverId: data.serverId,
           channelId: data.channelId,
           type: 'everyone',
@@ -302,7 +343,12 @@ async function processNotification(job: Job<NotificationJobData>) {
           body: preview,
           metadata: { messageId: data.messageId, authorId: data.authorId, authorUsername: authorName, channelName },
           createdAt: new Date().toISOString(),
-        });
+        };
+        if (provablyOpen) {
+          _io.to(`server:${data.serverId}`).emit('notification-created', notifPayload);
+        } else {
+          emitToUserRooms(_io, allMemberIds, 'notification-created', notifPayload);
+        }
       }
 
       log.debug({ jobId: job.id, mentions: '@everyone' }, 'mention fanout');
@@ -356,22 +402,30 @@ async function processNotification(job: Job<NotificationJobData>) {
     mentionedIds.delete(data.authorId);
 
     if (mentionedIds.size > 0) {
-      // Fetch author/channel info for push + persistent notifications. The
-      // channel's `ageRestricted` flag drives the recipient filter below.
-      const [authorUser, channel] = await Promise.all([
+      // Fetch author/channel info + notify gate (channel, override
+      // chain, @everyone role, provablyOpen). The channel's `ageRestricted` flag
+      // drives the recipient filter below.
+      const [authorUser, channelMeta, gate] = await Promise.all([
         prisma.user.findUnique({ where: { id: data.authorId }, select: { username: true } }),
-        prisma.channel.findUnique({ where: { id: data.channelId }, select: { name: true, ageRestricted: true } }),
+        prisma.channel.findUnique({ where: { id: data.channelId }, select: { name: true } }),
+        loadChannelNotifyGate(data.channelId),
       ]);
       const authorName = authorUser?.username ?? 'Someone';
-      const channelName = channel?.name ?? 'channel';
+      const channelName = channelMeta?.name ?? 'channel';
+      const channelAgeRestricted = gate?.channel.ageRestricted ?? false;
+      const provablyOpen = gate?.provablyOpen ?? false;
       const preview = data.content.length > 200 ? data.content.slice(0, 200) + '…' : data.content;
+
+      // Fail CLOSED if the channel is gone (see the @everyone branch above): a
+      // null gate must abort the fanout, not skip the filter.
+      if (!gate) return;
 
       // For age-gated channels, drop minors from the mention set so the
       // message preview never reaches them via push or Notification record.
       // Missing user rows fail-closed (treated as minors). Done before the
       // server-channel-activity emit so badge state stays consistent with
       // who actually receives the notification.
-      if (channel?.ageRestricted) {
+      if (channelAgeRestricted) {
         const candidate = Array.from(mentionedIds);
         const ages = await prisma.user.findMany({
           where: { id: { in: candidate } },
@@ -388,8 +442,22 @@ async function processNotification(job: Job<NotificationJobData>) {
         }
       }
 
+      // for a not-provably-open channel, drop mentioned users who cannot
+      // VIEW it (a role/username mention can resolve a non-viewer). Age already
+      // applied above, so dropMinors is not repeated.
+      if (!provablyOpen && mentionedIds.size > 0) {
+        const viewers = await filterUsersWhoCanViewChannel({ gate, candidateUserIds: Array.from(mentionedIds), dropMinors: false });
+        for (const uid of Array.from(mentionedIds)) if (!viewers.has(uid)) mentionedIds.delete(uid);
+        if (mentionedIds.size === 0) {
+          log.debug({ jobId: job.id, channelId: data.channelId }, 'all mention recipients dropped by channel-visibility filter');
+          return;
+        }
+      }
+
       const mentionArray = Array.from(mentionedIds);
-      _io.to(`server:${data.serverId}`).emit('server-channel-activity', {
+      // + route the (content-free) channel-activity ping to the server
+      // room only when provably open; otherwise to the channel room (viewers).
+      _io.to(provablyOpen ? `server:${data.serverId}` : `channel:${data.channelId}`).emit('server-channel-activity', {
         serverId: data.serverId,
         channelId: data.channelId,
         messageId: data.messageId,
@@ -504,12 +572,17 @@ async function processNotification(job: Job<NotificationJobData>) {
       }).catch(() => []),
       prisma.user.findUnique({
         where: { id: data.userId },
-        select: { showCurrentActivity: true, activitySharingEnabled: true, activityShareScope: true },
+        select: { showCurrentActivity: true, activitySharingEnabled: true, activityShareScope: true, status: true },
       }).catch(() => null),
     ]);
 
     if (!userPrivacy || !userPrivacy.activitySharingEnabled) return;
     if (userPrivacy.showCurrentActivity === 'nobody') return;
+    // Invisible/offline users broadcast no activity — mirror the inline guard at
+    // infrastructure.ts, which is dead in production once the work is enqueued here
+    // (this worker is the prod broadcast path). The presence branch masks separately
+    // at the top; this is the activity branch, so there is no double-mask.
+    if (userPrivacy.status === 'invisible' || userPrivacy.status === 'offline') return;
 
     const blockedIds = new Set<string>();
     for (const b of blocks) {

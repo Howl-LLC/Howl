@@ -158,7 +158,15 @@ async function buildWelcomeResponse(serverId: string): Promise<{
       select: { welcomeScreenEnabled: true, welcomeScreenDescription: true },
     }),
     prisma.serverWelcomeChannel.findMany({
-      where: { serverId },
+      // Never surface a private channel on the welcome screen. This response is
+      // served to non-member / anonymous callers on discoverable servers, so a
+      // private channel's name would leak off-platform. The POST /channels write
+      // path rejects adding a private channel going forward; this relation
+      // filter also neutralises any grandfathered row, or a channel later
+      // flipped private. (Grandfathered private rows become invisible to
+      // managers here too — a harmless orphan; clear them with a one-off DB
+      // sweep if any exist. Pre-launch there are none.)
+      where: { serverId, channel: { isPrivate: false } },
       orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
       take: MAX_WELCOME_CHANNELS,
       include: {
@@ -313,10 +321,12 @@ router.post(
         emoji?: string | null;
       };
 
-      // Channel must belong to this server. Look it up explicitly — never
-      // trust the client's serverId/channelId pairing.
+      // Channel must belong to this server AND be public. Look it up explicitly
+      // — never trust the client's serverId/channelId pairing. isPrivate:false
+      // is what stops a private channel's name being published to the anonymous
+      // welcome-screen GET (the grid is what that endpoint returns).
       const channel = await prisma.channel.findFirst({
-        where: { id: channelId, serverId: m.serverId },
+        where: { id: channelId, serverId: m.serverId, isPrivate: false },
         select: { id: true },
       });
       if (!channel) {

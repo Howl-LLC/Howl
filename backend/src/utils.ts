@@ -115,6 +115,8 @@ export {
   hasPermission,
   hasChannelPermission,
   canViewChannel,
+  assertChannelVisible,
+  assertChannelReadable,
   loadPermissionContext,
   memberHasPermission,
   unionPerms,
@@ -124,7 +126,7 @@ export {
   canSeeHiddenRoles,
   ALL_PERMISSIONS_GRANTED,
 } from './utils/permissions.js';
-export type { PermissionContext, LoadedPermissionContext, RoleLike, MemberLike, PermissionOverride } from './utils/permissions.js';
+export type { PermissionContext, LoadedPermissionContext, RoleLike, MemberLike, PermissionOverride, ChannelGateResult } from './utils/permissions.js';
 
 /**
  * Check if a server member is currently timed out (lazy expiry -- no background job needed).

@@ -36,6 +36,7 @@ import { scheduleVoiceE2eeRotate, rotateStageLeaderAndKey } from '../services/vo
 import { hasPermission, hasChannelPermission } from '../utils/permissions.js';
 import type { PermissionContext, PermissionOverride } from '../utils/permissions.js';
 import { emitServersInitialState } from './channels.js';
+import { emitStageEventScoped, emitVoicePresenceScoped } from '../utils/channelVisibility.js';
 import { isUnderEighteen } from '../utils/discoveryFilters.js';
 
 export const SOCKET_REVALIDATION_MS = 5 * 60 * 1000; // 5 minutes
@@ -458,7 +459,7 @@ export function registerConnectionHandlers(ctx: SocketContext): void {
 
       // Initial voice/stage state per server. Batched: 2 Prisma queries +
       // N parallel Redis reads instead of 2N Prisma queries.
-      await emitServersInitialState(socket, activeServerIds);
+      await emitServersInitialState(socket, activeServerIds, userId);
 
       _logger.info(
         {
@@ -600,10 +601,10 @@ export function registerConnectionHandlers(ctx: SocketContext): void {
       }
 
       if (!getIsShuttingDown()) socket.to(`voice:${voiceChannelId}`).emit('voice-user-left', { userId });
-      const channel = await prisma.channel.findUnique({ where: { id: voiceChannelId }, select: { serverId: true } }).catch(() => null);
+      const channel = await prisma.channel.findUnique({ where: { id: voiceChannelId }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }).catch(() => null);
       const remainingVoiceParticipants = await getVoiceParticipants(voiceChannelId).catch(() => []);
       if (channel?.serverId && !getIsShuttingDown()) {
-        io.to(`server:${channel.serverId}`).emit('server-voice-participants', { serverId: channel.serverId, channelId: voiceChannelId, participants: remainingVoiceParticipants.map(publicVoiceParticipant) });
+        void emitVoicePresenceScoped({ io, channel: { id: voiceChannelId, serverId: channel.serverId, isPrivate: channel.isPrivate, categoryId: channel.categoryId, ageRestricted: channel.ageRestricted }, event: 'server-voice-participants', payload: { serverId: channel.serverId, channelId: voiceChannelId, participants: remainingVoiceParticipants.map(publicVoiceParticipant) } });
       }
       // forward secrecy on abrupt departure. The graceful
       // leave-voice-channel handler rotates the SFrame key; the common
@@ -753,9 +754,12 @@ export function registerConnectionHandlers(ctx: SocketContext): void {
         const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } }).catch(() => null);
         if (channel?.serverId) {
           const updatedSpeakers = await getActiveStageSpeakers(channelId).catch(() => []);
-          if (!getIsShuttingDown()) io.to(`server:${channel.serverId}`).emit('server-stage-participants', {
+          // Gate ONLY this emit through the visibility scope — the
+          // rotateStageLeaderAndKey below must still run, so keep it fire-and-forget
+          // (emitStageEventScoped never throws).
+          if (!getIsShuttingDown()) void emitStageEventScoped({ io, channelId, serverId: channel.serverId, event: 'server-stage-participants', payload: {
             serverId: channel.serverId, channelId, participants: updatedSpeakers,
-          });
+          } });
         }
         // when a STAGE SPEAKER (incl. the host) abruptly disconnects,
         // the graceful stage-leave + moderator-remove paths advance the

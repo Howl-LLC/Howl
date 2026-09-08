@@ -1530,6 +1530,10 @@ model ImageHash {
   @@index([uploaderId])
   // Per-send provenance lookup by stored filename (channel attach-time check).
   @@index([filename])
+  // Upload-ACL provenance lookup: `filename LIKE '<uuid-stem>%'` (uploadAcl.ts,
+  //). text_pattern_ops is required for a left-anchored LIKE to use an
+  // index under the default collation; the plain index above serves equality.
+  @@index([filename(ops: raw("text_pattern_ops"))], map: "ImageHash_filename_pattern_idx")
   @@index([flagMatch])
   @@index([createdAt])
 }

@@ -99,6 +99,9 @@ vi.mock('../src/middleware/adminAuth.js', () => ({
   ADMIN_JWT_SECRET,
   authenticateAdminToken: (_req: unknown, _res: unknown, next: () => void) => next(),
   authenticateAdminOrEnrollment: (_req: unknown, _res: unknown, next: () => void) => next(),
+  // Pass-through: this file never exercises /mfa/disable, the only route that
+  // gates on it. The router module still needs the export to exist.
+  requireAdminStepUp: (_req: unknown, _res: unknown, next: () => void) => next(),
   invalidateAdminSessionCache: vi.fn(),
   invalidateAdminSessionCacheForUser: invalidateForUserMock,
 }));

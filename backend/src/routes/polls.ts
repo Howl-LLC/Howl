@@ -9,7 +9,8 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { validate } from '../middleware/validate.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import { createPollSchema, editPollSchema, pollVoteSchema } from '../schemas.js';
-import { getParam, hasPermission, loadPermissionContext, AUTHOR_USER_SELECT } from '../utils.js';
+import { getParam, hasPermission, loadPermissionContext, assertChannelVisible, assertChannelReadable, AUTHOR_USER_SELECT } from '../utils.js';
+import { denyIfAgeGated } from '../utils/ageGate.js';
 import { logger } from '../logger.js';
 import { createAuditLog } from './serverSettings.js';
 import { getClientIp } from '../utils/clientIp.js';
@@ -101,6 +102,29 @@ function isPollClosed(poll: { closedAt: Date | null; expiresAt: Date | null }): 
   return false;
 }
 
+/**
+ * load a channel row + its override chain for the shared read/visibility
+ * gate. This file previously had ZERO channel-level permission logic — poll
+ * reads/votes authorized on bare membership plus a `poll.channelId === channelId`
+ * SCOPING check, never a visibility check — so any member could read or vote in a
+ * private channel's polls. Returns null when the channel does not exist or is not
+ * in this server (caller returns 404 'Channel not found').
+ */
+async function loadChannelForGate(channelId: string, serverId: string) {
+  const channel = await prisma.channel.findUnique({
+    where: { id: channelId },
+    select: { id: true, serverId: true, isPrivate: true, categoryId: true, ageRestricted: true },
+  });
+  if (!channel || channel.serverId !== serverId) return null;
+  const [chOverrides, catOverrides] = await Promise.all([
+    prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+    channel.categoryId
+      ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
+      : Promise.resolve([]),
+  ]);
+  return { channel, chOverrides, catOverrides };
+}
+
 // Router
 
 const router = Router({ mergeParams: true });
@@ -118,7 +142,7 @@ router.post(
     const channelId = getParam(req, 'channelId');
 
     const [channel, member, permCtx] = await Promise.all([
-      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, type: true } }),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, type: true, isPrivate: true, categoryId: true, ageRestricted: true } }),
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
@@ -127,6 +151,21 @@ router.post(
     ]);
     if (!channel || channel.serverId !== serverId) return res.status(404).json({ error: 'Channel not found' });
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    // (write): block poll creation in a private channel the member cannot
+    // see. Visibility (404) runs BEFORE the createPolls check so a member lacking
+    // createPolls cannot tell a private channel (404) from a nonexistent one —
+    // mirrors messages.ts send (visibility before the action permission).
+    const [chOverrides, catOverrides] = await Promise.all([
+      prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+      channel.categoryId ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 }) : Promise.resolve([]),
+    ]);
+    const vis = assertChannelVisible(permCtx, channel, chOverrides, catOverrides);
+    if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
+    // Age gate AFTER the visibility gate: a minor who CAN see this public
+    // age-restricted channel is blocked from creating a poll in it (mirrors
+    // messages.ts send-path denyIfAgeGated).
+    const ageDeny = await denyIfAgeGated(channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
     if (!hasPermission(permCtx,'createPolls')) return res.status(403).json({ error: 'Missing createPolls permission' });
 
     // Cap: max 50 active (non-closed, non-expired) polls per channel
@@ -231,7 +270,15 @@ router.get(
       loadPermissionContext(req.userId, serverId),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
-    if (!hasPermission(permCtx,'readMessageHistory')) return res.status(403).json({ error: 'Missing readMessageHistory permission' });
+    // replace the server-level readMessageHistory check with the channel
+    // read gate (private → 404, channel-aware readMessageHistory → 403). Keeping
+    // the old server-level line too would over-deny a member granted read via an override.
+    const gateInputs = await loadChannelForGate(channelId, serverId);
+    if (!gateInputs) return res.status(404).json({ error: 'Channel not found' });
+    const gate = assertChannelReadable(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+    const ageDeny = await denyIfAgeGated(gateInputs.channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
 
     const limit = Math.min(Number(req.query.limit) || 20, 50);
     const polls = await prisma.poll.findMany({
@@ -257,10 +304,20 @@ router.get(
     const channelId = getParam(req, 'channelId');
     const pollId = getParam(req, 'pollId');
 
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
+    const [member, permCtx] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      loadPermissionContext(req.userId, serverId),
+    ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    // gate a single poll's full content behind the channel read gate.
+    const gateInputs = await loadChannelForGate(channelId, serverId);
+    if (!gateInputs) return res.status(404).json({ error: 'Channel not found' });
+    const gate = assertChannelReadable(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+    const ageDeny = await denyIfAgeGated(gateInputs.channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
 
     const poll = await prisma.poll.findUnique({
       where: { id: pollId },
@@ -288,10 +345,24 @@ router.post(
     const pollId = getParam(req, 'pollId');
     const { optionId } = req.body as { optionId: string };
 
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
+    const [member, permCtx] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      loadPermissionContext(req.userId, serverId),
+    ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    // (write): block voting in a private channel's poll the member cannot
+    // see (this was the weakest handler in the sweep — membership only).
+    const gateInputs = await loadChannelForGate(channelId, serverId);
+    if (!gateInputs) return res.status(404).json({ error: 'Channel not found' });
+    const vis = assertChannelVisible(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+    if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
+    // Age gate BEFORE the poll lookup so a minor is 403'd on a public
+    // age-restricted channel without learning whether the poll exists (mirrors
+    // messages.ts send-path denyIfAgeGated).
+    const ageDeny = await denyIfAgeGated(gateInputs.channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
 
     const poll = await prisma.poll.findUnique({
       where: { id: pollId },
@@ -350,10 +421,18 @@ router.delete(
     const pollId = getParam(req, 'pollId');
     const optionId = getParam(req, 'optionId');
 
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
+    const [member, permCtx] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      loadPermissionContext(req.userId, serverId),
+    ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    // (write): un-vote twin of POST /vote — same visibility gate.
+    const gateInputs = await loadChannelForGate(channelId, serverId);
+    if (!gateInputs) return res.status(404).json({ error: 'Channel not found' });
+    const vis = assertChannelVisible(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+    if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
 
     const poll = await prisma.poll.findUnique({
       where: { id: pollId },
@@ -406,10 +485,22 @@ router.patch(
       }),
       loadPermissionContext(req.userId, serverId),
     ]);
+    // membership first, then gate the URL channel, THEN the resource check —
+    // uniform 403 for a non-member and no fast-404 timing split (matches forum.ts).
+    if (!member || !permCtx) return res.status(403).json({ error: 'Not a server member' });
+    const gate = await loadChannelForGate(channelId, serverId);
+    if (!gate) return res.status(404).json({ error: 'Poll not found' });
+    const vis = assertChannelVisible(permCtx, gate.channel, gate.chOverrides, gate.catOverrides);
+    if (!vis.ok) return res.status(404).json({ error: 'Poll not found' });
+    // Age gate AFTER the visibility gate: this moderator-capable PATCH echoes the
+    // poll's stored question+options in its response (and lets a moderator
+    // edit/close others' polls), so a minor must not reach an age-restricted
+    // poll's 18+ content here — the read path is age-gated too.
+    const ageDeny = await denyIfAgeGated(gate.channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
     if (!poll || poll.channelId !== channelId || poll.serverId !== serverId) {
       return res.status(404).json({ error: 'Poll not found' });
     }
-    if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (poll.authorId !== req.userId && !hasPermission(permCtx,'manageMessages')) {
       return res.status(403).json({ error: 'Not authorized to edit this poll' });
     }
@@ -512,10 +603,16 @@ router.delete(
       }),
       loadPermissionContext(req.userId, serverId),
     ]);
+    // membership first, gate the URL channel, THEN the resource check —
+    // uniform 403 for a non-member and no fast-404 timing split (matches forum.ts).
+    if (!member || !permCtx) return res.status(403).json({ error: 'Not a server member' });
+    const gate = await loadChannelForGate(channelId, serverId);
+    if (!gate) return res.status(404).json({ error: 'Poll not found' });
+    const vis = assertChannelVisible(permCtx, gate.channel, gate.chOverrides, gate.catOverrides);
+    if (!vis.ok) return res.status(404).json({ error: 'Poll not found' });
     if (!poll || poll.channelId !== channelId || poll.serverId !== serverId) {
       return res.status(404).json({ error: 'Poll not found' });
     }
-    if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (poll.authorId !== req.userId && !hasPermission(permCtx,'manageMessages')) {
       return res.status(403).json({ error: 'Not authorized to delete this poll' });
     }
@@ -568,7 +665,14 @@ router.get(
       loadPermissionContext(req.userId, serverId),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
-    if (!hasPermission(permCtx,'readMessageHistory')) return res.status(403).json({ error: 'Missing readMessageHistory permission' });
+    // voter identities are the most sensitive read here. Replace the
+    // server-level readMessageHistory check with the channel read gate.
+    const gateInputs = await loadChannelForGate(channelId, serverId);
+    if (!gateInputs) return res.status(404).json({ error: 'Channel not found' });
+    const gate = assertChannelReadable(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+    const ageDeny = await denyIfAgeGated(gateInputs.channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
 
     const poll = await prisma.poll.findUnique({
       where: { id: pollId },

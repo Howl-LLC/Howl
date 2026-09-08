@@ -8,7 +8,7 @@ import rateLimit from 'express-rate-limit';
 import { prisma } from '../db.js';
 import { hashToken, generateRefreshToken, hashIp } from '../utils/sessionUtils.js';
 import { markAdminRefreshConsumed, getConsumedAdminRefresh } from '../utils/adminRefreshReuse.js';
-import { ADMIN_JWT_SECRET, authenticateAdminToken, authenticateAdminOrEnrollment, invalidateAdminSessionCache, invalidateAdminSessionCacheForUser, type AdminAuthRequest } from '../middleware/adminAuth.js';
+import { ADMIN_JWT_SECRET, authenticateAdminToken, authenticateAdminOrEnrollment, requireAdminStepUp, invalidateAdminSessionCache, invalidateAdminSessionCacheForUser, type AdminAuthRequest } from '../middleware/adminAuth.js';
 import { validate } from '../middleware/validate.js';
 import { adminLoginSchema, adminMfaEnableSchema, adminMfaDisableSchema, adminMfaVerifySchema, adminChangePasswordSchema } from '../schemas.js';
 import { logger } from '../logger.js';
@@ -16,6 +16,7 @@ import { getLoginLockout, setLoginLockout, deleteLoginLockout } from '../redis.j
 import { hashEmail, encryptSecret, decryptSecret } from '../services/mfaCrypto.js';
 import { createRateLimitStore, RATE_LIMIT_DEFAULTS } from '../rateLimitStore.js';
 import { markTokenUsedOnce, isTokenAlreadyUsed } from '../utils/singleUseToken.js';
+import { setEnrollCeremonyMarker, mintAdminEnrollmentToken } from '../utils/adminEnrollment.js';
 
 const log = logger.child({ module: 'adminAuth' });
 
@@ -128,39 +129,46 @@ router.post('/login', adminLoginLimiter, validate(adminLoginSchema), async (req,
     await deleteLoginLockout(`admin:${normalized}`);
 
     // Admin login requires BOTH TOTP and at least one registered passkey.
-    // If either factor is missing, route the admin to the enrollment wizard
-    // via a short-lived enrollment token instead of issuing an admin JWT.
+    // Factor-auth-first: an enrollment token is minted only
+    // after the caller proves every factor the account already has, so a
+    // password-only caller can never start enrollment on a partially
+    // enrolled account (and learns nothing about its enrollment state).
     const passkeyCount = await prisma.adminPasskey.count({ where: { adminUserId: admin.id } });
     const totpReady = admin.mfaEnabled && !!admin.mfaTotpSecret;
-    const fullyEnrolled = totpReady && passkeyCount > 0;
 
-    if (!fullyEnrolled) {
-      const enrollmentToken = jwt.sign(
-        { adminId: admin.id, scope: 'admin-enrollment' },
+    if (totpReady) {
+      // Fully enrolled AND TOTP-only accounts answer identically here;
+      // /mfa/verify decides whether the next step is passkey login or
+      // passkey enrollment.
+      const mfaToken = jwt.sign(
+        { adminId: admin.id, scope: 'admin-mfa-login' },
         ADMIN_JWT_SECRET,
-        { expiresIn: '15m' },
+        { expiresIn: '5m' },
       );
-      log.info(
-        { adminId: admin.id, mfaEnabled: admin.mfaEnabled, passkeyCount },
-        'Admin login: enrollment required',
-      );
-      return res.json({
-        enrollmentRequired: true,
-        enrollmentToken,
-        mfaEnabled: totpReady,
-        passkeyCount,
-      });
+      log.info({ adminId: admin.id }, 'Admin login: MFA required');
+      return res.json({ mfaRequired: true, mfaToken });
     }
 
-    // Fully enrolled: issue MFA challenge token. Final JWT is issued only
-    // after the full TOTP → passkey chain completes.
-    const mfaToken = jwt.sign(
-      { adminId: admin.id, scope: 'admin-mfa-login' },
-      ADMIN_JWT_SECRET,
-      { expiresIn: '5m' },
-    );
-    log.info({ adminId: admin.id }, 'Admin login: MFA required');
-    return res.json({ mfaRequired: true, mfaToken });
+    if (passkeyCount > 0) {
+      // No TOTP but has passkeys (post-disable state): prove the passkey
+      // before any enrollment token exists. totpVerified:false marks this
+      // token as login-minted so /passkey/login/finish routes to TOTP
+      // enrollment, never to a session.
+      const passkeyToken = jwt.sign(
+        { adminId: admin.id, scope: 'admin-passkey-login', totpVerified: false },
+        ADMIN_JWT_SECRET,
+        { expiresIn: '5m' },
+      );
+      log.info({ adminId: admin.id }, 'Admin login: passkey proof required before TOTP enrollment');
+      return res.json({ passkeyRequired: true, passkeyToken });
+    }
+
+    // Genuinely fresh account (no factors at all): password-only bootstrap,
+    // an accepted risk per spec (CLI-created accounts,
+    // CF Access in front, enrolled immediately at creation).
+    const { enrollmentToken, needs } = mintAdminEnrollmentToken(admin.id, ['totp', 'passkey']);
+    log.info({ adminId: admin.id }, 'Admin login: enrollment required (fresh account)');
+    return res.json({ enrollmentRequired: true, enrollmentToken, needs });
   } catch (err) {
     log.error({ err }, 'Admin login error');
     res.status(500).json({ error: 'Login failed' });
@@ -404,6 +412,11 @@ router.get('/mfa/status', authenticateAdminToken, async (req: AdminAuthRequest, 
 // (during the post-login enrollment wizard, before a full session exists).
 router.post('/mfa/setup', adminMfaLimiter, authenticateAdminOrEnrollment, async (req: AdminAuthRequest, res) => {
   try {
+    // an enrollment token may only touch the factors it needs.
+    if (req.enrollment && !req.enrollment.needs.includes('totp')) {
+      return res.status(401).json({ error: 'Invalid token scope' });
+    }
+
     const admin = await prisma.adminUser.findUnique({
       where: { id: req.adminId! },
       select: { id: true, email: true, mfaEnabled: true },
@@ -439,6 +452,11 @@ router.post('/mfa/setup', adminMfaLimiter, authenticateAdminOrEnrollment, async 
 // Accepts admin JWT or enrollment token; see /mfa/setup for rationale.
 router.post('/mfa/enable', adminMfaLimiter, authenticateAdminOrEnrollment, validate(adminMfaEnableSchema), async (req: AdminAuthRequest, res) => {
   try {
+    // an enrollment token may only touch the factors it needs.
+    if (req.enrollment && !req.enrollment.needs.includes('totp')) {
+      return res.status(401).json({ error: 'Invalid token scope' });
+    }
+
     const { setupToken, code } = req.body as { setupToken: string; code: string };
 
     let decoded: { adminId: string; totpSecret: string; scope: string };
@@ -461,6 +479,10 @@ router.post('/mfa/enable', adminMfaLimiter, authenticateAdminOrEnrollment, valid
       data: { mfaEnabled: true, mfaTotpSecret: decoded.totpSecret },
     });
 
+    if (req.enrollment) {
+      await setEnrollCeremonyMarker(req.enrollment.jti, 'totp', req.adminId!);
+    }
+
     log.info({ adminId: req.adminId }, 'Admin MFA enabled');
     res.json({ success: true });
   } catch (err) {
@@ -470,7 +492,7 @@ router.post('/mfa/enable', adminMfaLimiter, authenticateAdminOrEnrollment, valid
 });
 
 // POST /api/admin/auth/mfa/disable
-router.post('/mfa/disable', adminMfaLimiter, authenticateAdminToken, validate(adminMfaDisableSchema), async (req: AdminAuthRequest, res) => {
+router.post('/mfa/disable', adminMfaLimiter, authenticateAdminToken, requireAdminStepUp, validate(adminMfaDisableSchema), async (req: AdminAuthRequest, res) => {
   try {
     const { password, code } = req.body as { password: string; code: string };
 
@@ -542,11 +564,20 @@ router.post('/mfa/verify', adminLoginLimiter, validate(adminMfaVerifySchema), as
     const claimed = await markTokenUsedOnce('admin:used-mfa-token', fingerprint, 600);
     if (!claimed) return res.status(400).json({ error: 'MFA token already used. Please log in again.' });
 
-    // TOTP verified. Instead of issuing the final admin JWT, issue a
-    // passkey-login token — the user must still complete the WebAuthn step
-    // via /passkey/login/begin + /finish before a session is created.
+    // TOTP proven. If the account has no passkey yet, this is where the
+    // enrollment token is minted (factor-auth-first): the caller has now
+    // proven every factor the account already has.
+    const passkeyCount = await prisma.adminPasskey.count({ where: { adminUserId: admin.id } });
+    if (passkeyCount === 0) {
+      const { enrollmentToken, needs } = mintAdminEnrollmentToken(admin.id, ['passkey']);
+      log.info({ adminId: admin.id }, 'Admin TOTP verified; passkey enrollment required');
+      return res.json({ enrollmentRequired: true, enrollmentToken, needs });
+    }
+
+    // Otherwise the user must still complete the WebAuthn step via
+    // /passkey/login/begin + /finish before a session is created.
     const passkeyToken = jwt.sign(
-      { adminId: admin.id, scope: 'admin-passkey-login' },
+      { adminId: admin.id, scope: 'admin-passkey-login', totpVerified: true },
       ADMIN_JWT_SECRET,
       { expiresIn: '5m' },
     );

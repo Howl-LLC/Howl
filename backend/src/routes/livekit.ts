@@ -13,6 +13,7 @@ import { prisma } from '../db.js';
 import { logger } from '../logger.js';
 import { getEffectivePlan, hasPermission, loadPermissionContext, isMemberTimedOut } from '../utils.js';
 import { hasChannelPermission } from '../utils/channelPermissions.js';
+import { denyIfAgeGated } from '../utils/ageGate.js';
 import { isStageSpeaker, isInSet } from './stages.js';
 import { isInVoiceChannel, isInDmCall } from '../redis.js';
 import { getRegion, getDefaultRegion, getRegionListForClient } from '../services/livekitRegions.js';
@@ -60,7 +61,7 @@ router.post('/token', authenticateToken, tokenLimiter, validate(livekitTokenSche
   if (roomType === 'voice' || roomType === 'stage') {
     const channel = await prisma.channel.findUnique({
       where: { id: resourceId },
-      select: { id: true, type: true, serverId: true, isPrivate: true, categoryId: true },
+      select: { id: true, type: true, serverId: true, isPrivate: true, categoryId: true, ageRestricted: true },
     });
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
     if (roomType === 'voice' && channel.type !== 'voice') return res.status(400).json({ error: 'Not a voice channel' });
@@ -113,6 +114,19 @@ router.post('/token', authenticateToken, tokenLimiter, validate(livekitTokenSche
       }
     }
 
+    // Age gate: refuse to mint a voice/stage MEDIA token for a minor on an
+    // age-restricted channel. Runs AFTER the private-view override check above
+    // (so it never leaks the `ageRestricted` flag to a member who cannot view
+    // the channel — the F-2 oracle) and AFTER the Redis membership check,
+    // mirroring the view-then-age ordering of the `join-voice-channel` /
+    // `stage-join-audience` socket handlers. Defense in depth behind those
+    // socket gates: a `manageStages` host who started a stage lands in the Redis
+    // speaker set (routes/stages.ts POST /stage/start), and the voice leg closes
+    // any path that seeds voice membership without the socket age gate. Applies
+    // to both room types (channel carries `ageRestricted`).
+    const ageDeny = await denyIfAgeGated(channel, userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
+
     if (roomType === 'stage') {
       // Stage: check Redis speaker set, or manageStages permission
       const speakerStatus = await isStageSpeaker(resourceId, userId);
@@ -137,8 +151,11 @@ router.post('/token', authenticateToken, tokenLimiter, validate(livekitTokenSche
       region = getDefaultRegion();
     }
   } else if (roomType === 'dm-call') {
-    const participant = await prisma.dMParticipant.findUnique({
-      where: { userId_dmChannelId: { userId, dmChannelId: resourceId } },
+    // findFirst so we can filter pendingRemoval: null — the HTTP token path is the second
+    // copy of the DM-call join capability, so a kicked member must not be granted a LiveKit
+    // publish token here either. Ships together with the socket join in dmCalls.ts.
+    const participant = await prisma.dMParticipant.findFirst({
+      where: { userId, dmChannelId: resourceId, pendingRemoval: null },
     });
     if (!participant) return res.status(403).json({ error: 'You are not in this DM' });
 

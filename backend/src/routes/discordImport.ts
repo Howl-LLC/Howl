@@ -8,7 +8,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 import { prisma } from '../db.js';
-import { getParam, hasPermission, getEffectivePlan, loadPermissionContext } from '../utils.js';
+import { getParam, hasPermission, getEffectivePlan, loadPermissionContext, canViewChannel } from '../utils.js';
 import { enqueueDiscordImport } from '../queues/producers.js';
 import { logger } from '../logger.js';
 import { fileURLToPath } from 'node:url';
@@ -186,9 +186,33 @@ router.post(
 
       const channelName = data.channel.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-').slice(0, 100);
 
-      let channel = await prisma.channel.findFirst({
+      // Resolve an existing channel by name — but only among channels the actor
+      // can actually SEE. manageServer (required above) is disjoint from
+      // channel-view, so without this filter a manageServer holder could target
+      // a private channel they cannot see by name and inject forged history into
+      // it, and the 202 body would echo the private channel's id. A name that
+      // matches only a channel the actor cannot view falls through to the create
+      // branch below, which makes a NEW public channel — fail-safe.
+      const candidates = await prisma.channel.findMany({
         where: { serverId, name: channelName },
+        take: 20,
       });
+      let channel: (typeof candidates)[number] | null = null;
+      if (candidates.length > 0) {
+        const catIds = candidates.map((c) => c.categoryId).filter((id): id is string => !!id);
+        const [chOvrs, catOvrs] = await Promise.all([
+          prisma.channelPermissionOverride.findMany({ where: { channelId: { in: candidates.map((c) => c.id) } }, take: 500 }),
+          catIds.length > 0
+            ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: { in: catIds } }, take: 500 })
+            : Promise.resolve([]),
+        ]);
+        channel = candidates.find((c) => canViewChannel(
+          ctx,
+          c,
+          chOvrs.filter((o) => o.channelId === c.id),
+          c.categoryId ? catOvrs.filter((o) => o.categoryId === c.categoryId) : [],
+        )) ?? null;
+      }
 
       let channelCreated = false;
       let categoryCreated = false;

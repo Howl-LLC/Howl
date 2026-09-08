@@ -51,8 +51,12 @@ const UPLOAD_URL_BASES: string[] = [
 ];
 
 /**
- * Resolve the served filename to the channel(s)/DM(s) that reference it, via the
- * authoritative message/post rows. A file is stored as `<stem>` (extensionless
+ * Resolve the served filename to the channel(s)/DM(s) its UPLOADER posted it in,
+ * via the authoritative message/post rows. Ownership is bound to the file's
+ * PROVENANCE, never to the union of every row that happens to reference the URL:
+ * otherwise any authenticated user self-grants permanent access to a file whose
+ * name they have merely seen, by posting that URL into a channel they control
+ *. A file is stored as `<stem>` (extensionless
  * upload) or `<stem>.<ext>`, under the relative `/api/uploads/` path or an absolute
  * backend-origin URL; thumb_/frame_ derivatives share the parent's `<stem>`. We
  * therefore match every (base, stem) form — extensionless exact + `<stem>.` prefix
@@ -64,9 +68,11 @@ const UPLOAD_URL_BASES: string[] = [
  * (`ThreadMessage -> Thread.channelId`), forum messages
  * (`ForumMessage -> ForumPost.channelId`), and forum-post covers
  * (`ForumPost.imageUrl -> channelId`). DM attachments contribute a DM owner
- * (`DMMessage.dmChannelId`). A filename referenced by no row (avatar/banner/emoji/
- * legacy, or a not-yet-posted upload still in the composer preview window) resolves
- * to `public`. Throws on a DB error so the serve route can fail closed.
+ * (`DMMessage.dmChannelId`). Only rows authored by the file's uploader count; a
+ * row authored by anyone else is a re-post and confers nothing. A filename the
+ * uploader posted nowhere (avatar/banner/emoji/legacy, or a not-yet-posted upload
+ * still in the composer preview window) resolves to `public`. Throws on a DB
+ * error so the serve route can fail closed.
  */
 export async function resolveUploadOwner(filename: string): Promise<UploadOwner> {
   const stem = extractUploadStem(filename);
@@ -81,43 +87,75 @@ export async function resolveUploadOwner(filename: string): Promise<UploadOwner>
     ...exacts.map((v) => ({ imageUrl: v })),
     ...extPrefixes.map((v) => ({ imageUrl: { startsWith: v } })),
   ];
-  const [msgRows, dmRows, threadRows, forumMsgRows, forumPostRows] = await Promise.all([
+  const [msgRows, dmRows, threadRows, forumMsgRows, forumPostRows, provRows] = await Promise.all([
     prisma.message.findMany({
       where: { OR: attOr },
-      select: { channelId: true },
-      distinct: ['channelId'],
+      select: { channelId: true, authorId: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
       take: RESOLVE_TAKE,
     }),
     prisma.dMMessage.findMany({
       where: { OR: attOr },
-      select: { dmChannelId: true },
-      distinct: ['dmChannelId'],
+      select: { dmChannelId: true, authorId: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
       take: RESOLVE_TAKE,
     }),
     prisma.threadMessage.findMany({
       where: { OR: attOr },
-      select: { thread: { select: { channelId: true } } },
+      select: { authorId: true, createdAt: true, thread: { select: { channelId: true } } },
+      orderBy: { createdAt: 'asc' },
       take: RESOLVE_TAKE,
     }),
     prisma.forumMessage.findMany({
       where: { OR: attOr },
-      select: { forumPost: { select: { channelId: true } } },
+      select: { authorId: true, createdAt: true, forumPost: { select: { channelId: true } } },
+      orderBy: { createdAt: 'asc' },
       take: RESOLVE_TAKE,
     }),
     prisma.forumPost.findMany({
       where: { OR: imgOr },
-      select: { channelId: true },
-      distinct: ['channelId'],
+      select: { channelId: true, authorId: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
       take: RESOLVE_TAKE,
     }),
+    // Provenance. ImageHash.filename is the server-minted `<stem>` or
+    // `<stem>.<ext>`, so a left-anchored stem match finds the upload's row
+    // whichever derivative was requested. `source`/`sourceId` are NOT usable here
+    // (upload.ts takes them from self-asserted query params and defaults to
+    // source='channel', sourceId=null for every plaintext upload); only
+    // uploaderId is trustworthy, since the filename is an unguessable random UUID.
+    prisma.imageHash.findMany({
+      where: { filename: { startsWith: stem } },
+      select: { uploaderId: true },
+      distinct: ['uploaderId'],
+      take: 2,
+    }),
   ]);
-  const channelIds = [...new Set<string>([
-    ...msgRows.map((r) => r.channelId),
-    ...threadRows.map((r) => r.thread.channelId),
-    ...forumMsgRows.map((r) => r.forumPost.channelId),
-    ...forumPostRows.map((r) => r.channelId),
-  ])];
-  const dmChannelIds = [...new Set<string>(dmRows.map((r) => r.dmChannelId))];
+  type UploadRef = { authorId: string; createdAt: Date; channelId?: string; dmChannelId?: string };
+  const refs: UploadRef[] = [
+    ...msgRows.map((r) => ({ authorId: r.authorId, createdAt: r.createdAt, channelId: r.channelId })),
+    ...threadRows.map((r) => ({ authorId: r.authorId, createdAt: r.createdAt, channelId: r.thread.channelId })),
+    ...forumMsgRows.map((r) => ({ authorId: r.authorId, createdAt: r.createdAt, channelId: r.forumPost.channelId })),
+    ...forumPostRows.map((r) => ({ authorId: r.authorId, createdAt: r.createdAt, channelId: r.channelId })),
+    ...dmRows.map((r) => ({ authorId: r.authorId, createdAt: r.createdAt, dmChannelId: r.dmChannelId })),
+  ];
+  // Bind ownership to the file's UPLOADER. Exactly one ImageHash uploader is
+  // authoritative provenance; otherwise (a legacy upload, a row the 180-day
+  // retention sweep already purged, a GDPR erasure, or a dropped best-effort
+  // write) fall back to the author of the EARLIEST reference. That fallback is
+  // sound because the stem is a server-minted random UUID: nobody can reference
+  // the file before the uploader first posts it, so an injected row is always
+  // strictly later. Never the union of every referencing row — that is what made
+  // the ACL self-grantable.
+  let uploaderId: string | null = provRows.length === 1 ? provRows[0].uploaderId : null;
+  if (!uploaderId) {
+    let earliest: UploadRef | null = null;
+    for (const r of refs) if (!earliest || r.createdAt < earliest.createdAt) earliest = r;
+    uploaderId = earliest ? earliest.authorId : null;
+  }
+  const owned = uploaderId === null ? [] : refs.filter((r) => r.authorId === uploaderId);
+  const channelIds = [...new Set<string>(owned.flatMap((r) => (r.channelId ? [r.channelId] : [])))];
+  const dmChannelIds = [...new Set<string>(owned.flatMap((r) => (r.dmChannelId ? [r.dmChannelId] : [])))];
   if (channelIds.length && dmChannelIds.length) return { kind: 'both', channelIds, dmChannelIds };
   if (channelIds.length) return { kind: 'channel', channelIds };
   if (dmChannelIds.length) return { kind: 'dm', dmChannelIds };
@@ -218,8 +256,8 @@ async function isActiveInAnyDm(viewerId: string, dmChannelIds: string[]): Promis
  * allowed (the caller skips auth for it). For a channel owner the viewer must be a
  * ServerMember who can view (private -> requireOverride viewChannels) AND read
  * history; for a DM owner the viewer must be an active DMParticipant. A `both`
- * owner is allowed if EITHER context grants access (a forwarded file the viewer
- * can legitimately see via one of its homes).
+ * owner is allowed if EITHER context grants access (the uploader posted the same
+ * file to a channel and to a DM; the viewer sees it via one of its homes).
  */
 export async function authorizeUploadAccess(viewerId: string, owner: UploadOwner): Promise<boolean> {
   switch (owner.kind) {

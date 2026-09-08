@@ -22,12 +22,41 @@ import { getEffectivePlan } from '../utils.js';
 import { closeActivityHistory } from '../services/activityHistory.js';
 import type { Server as SocketIOServer } from 'socket.io';
 import { getClientIp } from '../utils/clientIp.js';
+import { identifyServeViewer as identifySessionUser } from '../services/uploadAcl.js';
 
 const log = logger.child({ module: 'connected-apps' });
 
 const router = Router();
 
 const FRONTEND_URL = (process.env.FRONTEND_ORIGIN || 'http://localhost:3000').split(',')[0].trim();
+
+/**
+ * Resolve the acting Howl identity for a GET /:provider/connect.
+ *
+ * The identity comes from the LIVE session on the request itself — a Bearer
+ * token, or the httpOnly `howl_refresh` cookie that a same-site top-level
+ * navigation carries — NOT from `connect_token` alone. On its own connect_token
+ * is a bearer capability in a URL: plant your own in a victim's link and THEIR
+ * provider account lands in YOUR ConnectedApp row; lift a victim's out of a URL
+ * and YOUR provider account lands in theirs. It is kept as per-click
+ * intent proof and must name the same user as the session.
+ *
+ * Returns null on any failure (no session, bad signature, wrong purpose, wrong
+ * user) so every caller refuses with the one existing `invalid_connect_token`
+ * redirect — one string for all cases, so this adds no existence oracle.
+ */
+async function resolveConnectUserId(req: Request, connectToken: string, purpose: string): Promise<string | null> {
+  const sessionUserId = await identifySessionUser(req);
+  if (!sessionUserId) return null;
+  try {
+    const decoded = jwt.verify(connectToken, JWT_SECRET, { algorithms: ['HS256'] }) as { userId: string; purpose?: string };
+    if (decoded.purpose !== purpose) return null;
+    if (decoded.userId !== sessionUserId) return null;
+  } catch {
+    return null;
+  }
+  return sessionUserId;
+}
 
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
@@ -350,14 +379,8 @@ router.get('/spotify/connect', appInitLimiter, asyncHandler(async (req: Request,
   const connectToken = req.query.connect_token as string | undefined;
   if (!connectToken) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
-  let userId: string;
-  try {
-    const decoded = jwt.verify(connectToken, JWT_SECRET, { algorithms: ['HS256'] }) as { userId: string; purpose?: string };
-    if (decoded.purpose !== 'spotify-connect') throw new Error('Invalid token purpose');
-    userId = decoded.userId;
-  } catch {
-    return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
-  }
+  const userId = await resolveConnectUserId(req, connectToken, 'spotify-connect');
+  if (!userId) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
   // Store userId in a signed short-lived JWT cookie (callback is a redirect, not an authenticated API call)
   const userToken = jwt.sign({ userId, purpose: 'spotify-connect' }, JWT_SECRET, { expiresIn: '5m' });
@@ -703,14 +726,8 @@ router.get('/riot/connect', appInitLimiter, asyncHandler(async (req: Request, re
   const connectToken = req.query.connect_token as string | undefined;
   if (!connectToken) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
-  let userId: string;
-  try {
-    const decoded = jwt.verify(connectToken, JWT_SECRET, { algorithms: ['HS256'] }) as { userId: string; purpose?: string };
-    if (decoded.purpose !== 'riot-connect') throw new Error('Invalid token purpose');
-    userId = decoded.userId;
-  } catch {
-    return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
-  }
+  const userId = await resolveConnectUserId(req, connectToken, 'riot-connect');
+  if (!userId) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
   const userToken = jwt.sign({ userId, purpose: 'riot-connect' }, JWT_SECRET, { expiresIn: '5m' });
   res.cookie(APP_USER_COOKIE, userToken, {
@@ -899,14 +916,8 @@ router.get('/epic/connect', appInitLimiter, asyncHandler(async (req: Request, re
   const connectToken = req.query.connect_token as string | undefined;
   if (!connectToken) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
-  let userId: string;
-  try {
-    const decoded = jwt.verify(connectToken, JWT_SECRET, { algorithms: ['HS256'] }) as { userId: string; purpose?: string };
-    if (decoded.purpose !== 'epic-connect') throw new Error('Invalid token purpose');
-    userId = decoded.userId;
-  } catch {
-    return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
-  }
+  const userId = await resolveConnectUserId(req, connectToken, 'epic-connect');
+  if (!userId) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
   const userToken = jwt.sign({ userId, purpose: 'epic-connect' }, JWT_SECRET, { expiresIn: '5m' });
   res.cookie(APP_USER_COOKIE, userToken, {
@@ -1150,14 +1161,8 @@ router.get('/twitch/connect', appInitLimiter, asyncHandler(async (req: Request, 
   const connectToken = req.query.connect_token as string | undefined;
   if (!connectToken) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
-  let userId: string;
-  try {
-    const decoded = jwt.verify(connectToken, JWT_SECRET, { algorithms: ['HS256'] }) as { userId: string; purpose?: string };
-    if (decoded.purpose !== 'twitch-connect') throw new Error('Invalid token purpose');
-    userId = decoded.userId;
-  } catch {
-    return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
-  }
+  const userId = await resolveConnectUserId(req, connectToken, 'twitch-connect');
+  if (!userId) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
   const userToken = jwt.sign({ userId, purpose: 'twitch-connect' }, JWT_SECRET, { expiresIn: '5m' });
   res.cookie(APP_USER_COOKIE, userToken, {
@@ -1321,14 +1326,8 @@ router.get('/youtube/connect', appInitLimiter, asyncHandler(async (req: Request,
   const connectToken = req.query.connect_token as string | undefined;
   if (!connectToken) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
-  let userId: string;
-  try {
-    const decoded = jwt.verify(connectToken, JWT_SECRET, { algorithms: ['HS256'] }) as { userId: string; purpose?: string };
-    if (decoded.purpose !== 'youtube-connect') throw new Error('Invalid token purpose');
-    userId = decoded.userId;
-  } catch {
-    return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
-  }
+  const userId = await resolveConnectUserId(req, connectToken, 'youtube-connect');
+  if (!userId) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
   const userToken = jwt.sign({ userId, purpose: 'youtube-connect' }, JWT_SECRET, { expiresIn: '5m' });
   res.cookie(APP_USER_COOKIE, userToken, {
@@ -1496,14 +1495,8 @@ router.get('/github/connect', appInitLimiter, asyncHandler(async (req: Request, 
   const connectToken = req.query.connect_token as string | undefined;
   if (!connectToken) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
-  let userId: string;
-  try {
-    const decoded = jwt.verify(connectToken, JWT_SECRET, { algorithms: ['HS256'] }) as { userId: string; purpose?: string };
-    if (decoded.purpose !== 'github-connect') throw new Error('Invalid token purpose');
-    userId = decoded.userId;
-  } catch {
-    return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
-  }
+  const userId = await resolveConnectUserId(req, connectToken, 'github-connect');
+  if (!userId) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
   const userToken = jwt.sign({ userId, purpose: 'github-connect' }, JWT_SECRET, { expiresIn: '5m' });
   res.cookie(APP_USER_COOKIE, userToken, {
@@ -1669,14 +1662,8 @@ router.get('/reddit/connect', appInitLimiter, asyncHandler(async (req: Request, 
   const connectToken = req.query.connect_token as string | undefined;
   if (!connectToken) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
-  let userId: string;
-  try {
-    const decoded = jwt.verify(connectToken, JWT_SECRET, { algorithms: ['HS256'] }) as { userId: string; purpose?: string };
-    if (decoded.purpose !== 'reddit-connect') throw new Error('Invalid token purpose');
-    userId = decoded.userId;
-  } catch {
-    return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
-  }
+  const userId = await resolveConnectUserId(req, connectToken, 'reddit-connect');
+  if (!userId) return res.redirect(`${FRONTEND_URL}/settings?app_error=invalid_connect_token`);
 
   const userToken = jwt.sign({ userId, purpose: 'reddit-connect' }, JWT_SECRET, { expiresIn: '5m' });
   res.cookie(APP_USER_COOKIE, userToken, {

@@ -7,6 +7,8 @@
 export {
   hasChannelPermission,
   canViewChannel,
+  assertChannelVisible,
+  assertChannelReadable,
   loadPermissionContext,
   hasPermission,
   memberHasPermission,
@@ -21,4 +23,5 @@ export type {
   RoleLike,
   MemberLike,
   PermissionOverride,
+  ChannelGateResult,
 } from './permissions.js';

@@ -20,6 +20,7 @@ import type { Server as IOServer } from 'socket.io';
 import { redisConnection, queuesEnabled } from '../connection.js';
 import { EXPORTS_DIR } from '../../exportsDir.js';
 import { prisma } from '../../db.js';
+import { emitVoicePresenceScoped } from '../../utils/channelVisibility.js';
 import { logger } from '../../logger.js';
 import { cleanupJobSchema } from '../workerSchemas.js';
 import { electOldestRemaining } from '../../routes/dms.js';
@@ -164,14 +165,14 @@ export async function purgeExpiredTemporaryMembers(): Promise<number> {
         // retained key no longer protects the remaining members' media.
         const voiceChannelId = await findUserVoiceChannel(m.userId);
         if (voiceChannelId) {
-          const ch = await prisma.channel.findUnique({ where: { id: voiceChannelId }, select: { serverId: true } }).catch(() => null);
+          const ch = await prisma.channel.findUnique({ where: { id: voiceChannelId }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }).catch(() => null);
           if (ch?.serverId === m.serverId) {
             await removeVoiceParticipant(voiceChannelId, m.userId);
             await setVoiceReverseLookup(m.userId, null);
             await deleteVoiceOverride(voiceChannelId, m.userId);
             _io.to(`voice:${voiceChannelId}`).emit('voice-user-left', { userId: m.userId });
             const remaining = await getVoiceParticipants(voiceChannelId);
-            _io.to(`server:${m.serverId}`).emit('server-voice-participants', { serverId: m.serverId, channelId: voiceChannelId, participants: remaining });
+            void emitVoicePresenceScoped({ io: _io, channel: { id: voiceChannelId, serverId: m.serverId, isPrivate: ch.isPrivate, categoryId: ch.categoryId, ageRestricted: ch.ageRestricted }, event: 'server-voice-participants', payload: { serverId: m.serverId, channelId: voiceChannelId, participants: remaining } });
             scheduleVoiceE2eeRotate(_io, voiceChannelId, remaining.length > 0);
             removeLiveKitParticipant(`voice:${voiceChannelId}`, m.userId).catch(() => {});
           }

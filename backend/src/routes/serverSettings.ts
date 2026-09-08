@@ -4,6 +4,7 @@ import { Router, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createRateLimitStore, RATE_LIMIT_DEFAULTS } from '../rateLimitStore.js';
 import { prisma } from '../db.js';
+import { emitVoicePresenceScoped } from '../utils/channelVisibility.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import { serverNotSuspendedByServerId } from '../middleware/serverNotSuspended.js';
@@ -147,7 +148,12 @@ router.patch('/settings', authenticateToken, settingsMutationLimiter, validate(u
       .filter((v): v is string => typeof v === 'string');
     if (channelIdsToCheck.length > 0) {
       const found = await prisma.channel.findMany({
-        where: { id: { in: channelIdsToCheck }, serverId: m.serverId, type: 'text' },
+        // isPrivate:false — a public-facing designation (rules / updates /
+        // welcome) must never point at a private channel: the rules channel
+        // feeds Discovery eligibility and the welcome/rules system messages
+        // land where ordinary joiners can read them. A private channel is
+        // rejected as `channel_not_in_server` (same 400 below).
+        where: { id: { in: channelIdsToCheck }, serverId: m.serverId, type: 'text', isPrivate: false },
         select: { id: true },
         take: channelIdsToCheck.length,
       });
@@ -416,7 +422,7 @@ router.post('/bans', authenticateToken, settingsMutationLimiter, validate(create
       io.to(`user:${userId}`).emit('server-kicked', { serverId: m.serverId });
 
       const sockets = await io.in(`user:${userId}`).fetchSockets();
-      const serverChannels = await prisma.channel.findMany({ where: { serverId: m.serverId }, select: { id: true }, take: 500 });
+      const serverChannels = await prisma.channel.findMany({ where: { serverId: m.serverId }, select: { id: true, isPrivate: true, categoryId: true, ageRestricted: true }, take: 500 });
       const roomsToLeave = [`server:${m.serverId}`, ...serverChannels.map(c => `channel:${c.id}`), ...serverChannels.map(c => `voice:${c.id}`)];
       for (const s of sockets) {
         for (const room of roomsToLeave) s.leave(room);
@@ -431,8 +437,11 @@ router.post('/bans', authenticateToken, settingsMutationLimiter, validate(create
           await deleteVoiceOverride(voiceChannelId, userId);
           io.to(`voice:${voiceChannelId}`).emit('voice-user-left', { userId });
           const participants = await getVoiceParticipants(voiceChannelId);
-          io.to(`server:${m.serverId}`).emit('server-voice-participants', {
-            serverId: m.serverId, channelId: voiceChannelId, participants,
+          void emitVoicePresenceScoped({
+            io,
+            channel: { id: voiceChannelId, serverId: m.serverId, isPrivate: voiceChannel.isPrivate, categoryId: voiceChannel.categoryId, ageRestricted: voiceChannel.ageRestricted },
+            event: 'server-voice-participants',
+            payload: { serverId: m.serverId, channelId: voiceChannelId, participants },
           });
           // Forward secrecy at the ban boundary: rotate the SFrame key so
           // the banned member's retained key no longer protects subsequent media.

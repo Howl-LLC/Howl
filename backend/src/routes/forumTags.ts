@@ -9,7 +9,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { validate } from '../middleware/validate.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import { createForumTagSchema, updateForumTagSchema, reorderForumTagsSchema } from '../schemas.js';
-import { getParam, hasPermission, loadPermissionContext } from '../utils.js';
+import { getParam, hasPermission, loadPermissionContext, assertChannelReadable } from '../utils.js';
 import { logger } from '../logger.js';
 import { getClientIp } from '../utils/clientIp.js';
 
@@ -51,16 +51,31 @@ router.get(
     const serverId = getParam(req, 'serverId');
     const channelId = getParam(req, 'channelId');
 
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
-    if (!member) return res.status(403).json({ error: 'Not a member of this server' });
+    const [member, permCtx] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      loadPermissionContext(req.userId, serverId),
+    ]);
+    if (!member || !permCtx) return res.status(403).json({ error: 'Not a member of this server' });
 
     const channel = await prisma.channel.findFirst({
       where: { id: channelId, serverId },
-      select: { id: true },
+      select: { id: true, serverId: true, isPrivate: true, categoryId: true },
     });
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
+
+    // the tag taxonomy of a private forum was readable by any member — the
+    // channel row was loaded as { id } only and never gated. Apply the shared
+    // read gate (private → 404, readMessageHistory → 403).
+    const [chOverrides, catOverrides] = await Promise.all([
+      prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+      channel.categoryId
+        ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
+        : Promise.resolve([]),
+    ]);
+    const gate = assertChannelReadable(permCtx, channel, chOverrides, catOverrides);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
 
     const tags = await prisma.forumTag.findMany({
       where: { channelId },

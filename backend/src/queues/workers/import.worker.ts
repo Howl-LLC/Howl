@@ -212,9 +212,14 @@ async function processImport(job: Job<ImportJobData>) {
     log.info({ jobId: job.id, replies: replyUpdates.length, elapsedMs: Date.now() - startTime }, 'discord import replies resolved');
   }
 
-  // Notify the server room that import is complete
+  // Notify the importer that their import is complete. Scoped to the actor's
+  // `user:` room, not `server:` — the payload carries channelName, which for an
+  // import into a private channel would otherwise disclose that channel's name
+  // to every server member. The sole consumer (the import history pane) filters
+  // on the actor anyway, and every socket of the importer joins `user:${id}`
+  // unconditionally at connect, so no legitimate recipient is lost.
   if (_io) {
-    _io.to(`server:${parsed.data.serverId}`).emit('server-import-complete', {
+    _io.to(`user:${userId}`).emit('server-import-complete', {
       serverId: parsed.data.serverId,
       channelId,
       channelName,
@@ -252,8 +257,10 @@ export function startImportWorker(): Worker | null {
       // Surface the failure to the UI so the spinner stops with a real
       // message. Without this, a dead-lettered job leaves the user
       // staring at "Importing..." forever.
-      if (_io && job.data?.serverId) {
-        _io.to(`server:${job.data.serverId}`).emit('server-import-failed', {
+      if (_io && job.data?.userId) {
+        // Scoped to the importer's `user:` room, not `server:` — only the actor
+        // needs the failure toast, and this keeps parity with the success emit.
+        _io.to(`user:${job.data.userId}`).emit('server-import-failed', {
           serverId: job.data.serverId,
           error: err?.message || 'Import failed',
         });

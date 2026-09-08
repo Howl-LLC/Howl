@@ -3,6 +3,7 @@
 import type { SocketContext } from './types.js';
 import { prisma } from '../db.js';
 import { logger } from '../logger.js';
+import { emitVoicePresenceScoped } from '../utils/channelVisibility.js';
 import { getEffectivePlan } from '../utils.js';
 import { getIsShuttingDown } from '../shutdown.js';
 import {
@@ -79,13 +80,18 @@ export function registerDmCallHandlers(ctx: SocketContext): void {
           setVoiceReverseLookup(userId, null),
         ]);
         socket.to(`voice:${existingVoiceChannel}`).emit('voice-user-left', { userId });
-        const oldChannel = await prisma.channel.findUnique({ where: { id: existingVoiceChannel }, select: { serverId: true } }).catch(() => null);
+        const oldChannel = await prisma.channel.findUnique({ where: { id: existingVoiceChannel }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }).catch(() => null);
         if (oldChannel?.serverId) {
           const oldParticipants = await getVoiceParticipants(existingVoiceChannel);
-          io.to(`server:${oldChannel.serverId}`).emit('server-voice-participants', {
-            serverId: oldChannel.serverId,
-            channelId: existingVoiceChannel,
-            participants: oldParticipants,
+          void emitVoicePresenceScoped({
+            io,
+            channel: { id: existingVoiceChannel, serverId: oldChannel.serverId, isPrivate: oldChannel.isPrivate, categoryId: oldChannel.categoryId, ageRestricted: oldChannel.ageRestricted },
+            event: 'server-voice-participants',
+            payload: {
+              serverId: oldChannel.serverId,
+              channelId: existingVoiceChannel,
+              participants: oldParticipants,
+            },
           });
           // Forward secrecy when leaving a voice channel to join a DM call:
           // the user keeps the old channel's SFrame key, so rotate for the members
@@ -113,8 +119,12 @@ export function registerDmCallHandlers(ctx: SocketContext): void {
         logger.info({ userId, channelId: existingVoiceChannel, reason: 'joined-dm-call' }, 'auto-left voice channel');
       }
 
-      const participant = await prisma.dMParticipant.findUnique({
-        where: { userId_dmChannelId: { userId, dmChannelId } },
+      // findFirst (not findUnique) so we can add pendingRemoval: null — a kicked member
+      // awaiting MLS removal must not re-join the live call and be minted a publish token,
+      // which would defeat the kick's SFU eject (dms.ts). Same refusal string as an outsider
+      // gets below, so this adds no membership oracle. Ships with the livekit.ts twin.
+      const participant = await prisma.dMParticipant.findFirst({
+        where: { userId, dmChannelId, pendingRemoval: null },
         include: { user: { select: { username: true, avatar: true, banner: true, bannerPositionY: true, bannerZoom: true, nameColor: true, nameFont: true, nameEffect: true, avatarEffect: true, stripePlan: true, stripeStatus: true, stripePeriodEnd: true } } },
       });
       if (!participant) {

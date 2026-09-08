@@ -26,6 +26,7 @@ export const SENSITIVE_QUERY_PARAMS: readonly string[] = [
   'access_token',
   'id_token',
   'token',
+  'connect_token',
   'key',
   'nonce',
 ];

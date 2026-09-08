@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { prisma } from '../db.js';
+import { emitVoicePresenceScoped } from '../utils/channelVisibility.js';
 import { authenticateToken, type AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { updateProfileSchema, updateStatusSchema, updateDiscriminatorSchema, updatePreferencesSchema, setDateOfBirthSchema } from '../schemas.js';
@@ -431,9 +432,9 @@ router.patch('/me', authenticateToken, profileUpdateLimiter, validate(updateProf
         if (io) {
           const participants = await getVoiceParticipants(voiceChannelId);
           io.to(`voice:${voiceChannelId}`).emit('voice-participants', { channelId: voiceChannelId, participants });
-          const channel = await prisma.channel.findUnique({ where: { id: voiceChannelId }, select: { serverId: true } });
+          const channel = await prisma.channel.findUnique({ where: { id: voiceChannelId }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } });
           if (channel) {
-            io.to(`server:${channel.serverId}`).emit('server-voice-participants', { serverId: channel.serverId, channelId: voiceChannelId, participants });
+            void emitVoicePresenceScoped({ io, channel: { id: voiceChannelId, serverId: channel.serverId, isPrivate: channel.isPrivate, categoryId: channel.categoryId, ageRestricted: channel.ageRestricted }, event: 'server-voice-participants', payload: { serverId: channel.serverId, channelId: voiceChannelId, participants } });
           }
         }
       } catch { /* best-effort, non-blocking */ }

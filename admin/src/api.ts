@@ -682,8 +682,13 @@ class AdminAPI {
   async login(email: string, password: string): Promise<{
     mfaRequired?: boolean;
     mfaToken?: string;
+    passkeyRequired?: boolean;
+    passkeyToken?: string;
     enrollmentRequired?: boolean;
     enrollmentToken?: string;
+    needs?: Array<'totp' | 'passkey'>;
+    // Legacy backend fields (pre proof-carrying enrollment), used as the
+    // fallback for wizard routing when `needs` is absent.
     mfaEnabled?: boolean;
     passkeyCount?: number;
   }> {
@@ -693,7 +698,13 @@ class AdminAPI {
     });
   }
 
-  async verifyMfaLogin(mfaToken: string, code: string): Promise<{ passkeyRequired: true; passkeyToken: string }> {
+  async verifyMfaLogin(mfaToken: string, code: string): Promise<{
+    passkeyRequired?: boolean;
+    passkeyToken?: string;
+    enrollmentRequired?: boolean;
+    enrollmentToken?: string;
+    needs?: Array<'totp' | 'passkey'>;
+  }> {
     return this.request('/admin/auth/mfa/verify', {
       method: 'POST',
       body: JSON.stringify({ mfaToken, code }),
@@ -707,7 +718,13 @@ class AdminAPI {
     });
   }
 
-  async passkeyLoginFinish(challengeToken: string, credential: any): Promise<{ user: AuthUser; token: string }> {
+  async passkeyLoginFinish(challengeToken: string, credential: any): Promise<{
+    user?: AuthUser;
+    token?: string;
+    enrollmentRequired?: boolean;
+    enrollmentToken?: string;
+    needs?: Array<'totp' | 'passkey'>;
+  }> {
     return this.request('/admin/auth/passkey/login/finish', {
       method: 'POST',
       body: JSON.stringify({ challengeToken, credential }),

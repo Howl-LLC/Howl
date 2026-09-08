@@ -26,6 +26,8 @@ export interface AdminAuthRequest extends Request {
   adminId?: string;
   adminRole?: string;
   cfAccessEmail?: string;
+  /** Present only when auth came via an admin-enrollment token. */
+  enrollment?: { jti: string; needs: Array<'totp' | 'passkey'> };
 }
 
 export const requireSuperAdmin = async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
@@ -92,10 +94,11 @@ export const enforcePasswordChange = async (req: AdminAuthRequest, res: Response
       select: { forcePasswordChange: true },
     });
     if (!admin || !admin.forcePasswordChange) return next();
-    const url = req.originalUrl;
-    if (url.includes('/admin/auth/change-password') || url.includes('/admin/auth/logout') || url.includes('/admin/auth/me') || url.includes('/admin/auth/mfa/')) {
-      return next();
-    }
+    // Fail closed. The change-password / logout / me / mfa endpoints live under
+    // /admin/auth/*, which never runs this middleware (server.ts mounts it with
+    // cfAccessAuth only), so there is nothing to allowlist here. The previous
+    // originalUrl.includes() allowlist was bypassable via a query string such as
+    // ?x=/admin/auth/logout, because originalUrl carries the query. (D-PWCHANGE)
     return res.status(403).json({ error: 'Password change required', forcePasswordChange: true });
   } catch {
     return next();
@@ -125,7 +128,20 @@ export const authenticateAdminOrEnrollment = async (req: AdminAuthRequest, res: 
       return next();
     }
     if (decoded.scope === 'admin-enrollment') {
+      // enrollment tokens must carry { jti, needs } so the
+      // ceremonies can be bound to this specific token. Old-format tokens
+      // fail closed. (Claim check is inlined; importing the enrollment util
+      // here would create an import cycle via ADMIN_JWT_SECRET.)
+      const { jti, needs } = decoded as unknown as { jti?: unknown; needs?: unknown };
+      if (
+        typeof jti !== 'string' || jti.length === 0 ||
+        !Array.isArray(needs) || needs.length === 0 ||
+        !needs.every((n) => n === 'totp' || n === 'passkey')
+      ) {
+        return res.status(401).json({ error: 'Invalid token scope' });
+      }
       req.adminId = decoded.adminId;
+      req.enrollment = { jti, needs: needs as Array<'totp' | 'passkey'> };
       return next();
     }
     return res.status(401).json({ error: 'Invalid token scope' });

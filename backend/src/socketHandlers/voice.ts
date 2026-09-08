@@ -6,6 +6,8 @@ import { prisma } from '../db.js';
 import { logger } from '../logger.js';
 import { hasPermission, loadPermissionContext, effectivePosition, getEffectivePlan, isMemberTimedOut } from '../utils.js';
 import { hasChannelPermission } from '../utils/channelPermissions.js';
+import { emitVoicePresenceScoped } from '../utils/channelVisibility.js';
+import { denyIfAgeGated } from '../utils/ageGate.js';
 import { muteParticipantAudio } from '../services/livekitAdmin.js';
 import { mintLiveKitAccessToken, resolveLiveKitRegionForServer } from '../services/livekitTokens.js';
 import {
@@ -154,10 +156,10 @@ export function registerVoiceHandlers(ctx: SocketContext): void {
           deleteVoiceOverride(existingChannel, userId),
         ]);
         socket.to(`voice:${existingChannel}`).emit('voice-user-left', { userId });
-        const oldChannel = await prisma.channel.findUnique({ where: { id: existingChannel }, select: { serverId: true } }).catch(() => null);
+        const oldChannel = await prisma.channel.findUnique({ where: { id: existingChannel }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }).catch(() => null);
         if (oldChannel?.serverId) {
           const oldParticipants = await getVoiceParticipants(existingChannel);
-          io.to(`server:${oldChannel.serverId}`).emit('server-voice-participants', { serverId: oldChannel.serverId, channelId: existingChannel, participants: oldParticipants.map(publicVoiceParticipant) });
+          void emitVoicePresenceScoped({ io, channel: { id: existingChannel, serverId: oldChannel.serverId, isPrivate: oldChannel.isPrivate, categoryId: oldChannel.categoryId, ageRestricted: oldChannel.ageRestricted }, event: 'server-voice-participants', payload: { serverId: oldChannel.serverId, channelId: existingChannel, participants: oldParticipants.map(publicVoiceParticipant) } });
           // Forward secrecy on a channel switch: the user retains the old
           // channel's SFrame key after leaving it, so rotate for the members who
           // remain (parity with the graceful leave-voice-channel rotate below).
@@ -267,6 +269,19 @@ export function registerVoiceHandlers(ctx: SocketContext): void {
           callAck({ ok: false, error: 'No permission to view this channel' });
           return;
         }
+      }
+      // Voice age gate: a minor must not join an age-restricted voice channel.
+      // Runs AFTER the view gate (so it never leaks the ageRestricted flag to a
+      // non-viewer) and BEFORE the Redis membership write / token mint — the
+      // authoritative gate that keeps a minor out of the occupant roster + the
+      // SFrame key distribution + the /livekit/token isInVoiceChannel check.
+      // Mirrors stage-join's `denyIfAgeGated`; `channel` carries `ageRestricted`
+      // via the `include: { server: true }` load above.
+      const ageDeny = await denyIfAgeGated(channel, userId);
+      if (ageDeny) {
+        socket.emit('voice-join-error', { channelId, message: ageDeny.message });
+        callAck({ ok: false, error: ageDeny.message });
+        return;
       }
       if (isMemberTimedOut(member)) {
         socket.emit('voice-join-error', { channelId, message: 'You are timed out and cannot join voice channels' });
@@ -394,7 +409,7 @@ export function registerVoiceHandlers(ctx: SocketContext): void {
       const powerUpTier = pc >= 14 ? 3 : pc >= 7 ? 2 : pc >= 2 ? 1 : 0;
       socket.emit('voice-participants', { channelId, participants: participants.map(publicVoiceParticipant), powerUpTier });
       socket.to(`voice:${channelId}`).emit('voice-user-joined', { userId, username, nickname, avatar, banner, bannerPositionY, bannerZoom, nameColor, nameFont, nameEffect, avatarEffect, effectivePlan, roleColor, roleStyle, joinBlob: signedJoinBlob, signature: signedJoinSignature, signingPublicKey: joinerKeyBundle.signingPublicKey ?? undefined, capabilities: socket.protocolContext?.capabilities ?? [] });
-      io.to(`server:${channel.serverId}`).emit('server-voice-participants', { serverId: channel.serverId, channelId, participants: participants.map(publicVoiceParticipant) });
+      void emitVoicePresenceScoped({ io, channel: { id: channelId, serverId: channel.serverId, isPrivate: channel.isPrivate, categoryId: channel.categoryId, ageRestricted: channel.ageRestricted }, event: 'server-voice-participants', payload: { serverId: channel.serverId, channelId, participants: participants.map(publicVoiceParticipant) } });
 
       // E2EE: joiner is guaranteed to have a key bundle (checked above). If
       // other participants are already in the channel, ask the oldest one
@@ -428,7 +443,7 @@ export function registerVoiceHandlers(ctx: SocketContext): void {
       // skip to prevent kicking the new device's connection from Redis.
       if (!socket.rooms.has(`voice:${channelId}`)) return;
       if (!(await isInVoiceChannel(channelId, userId))) return;
-      const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } }).catch(() => null);
+      const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }).catch(() => null);
       socket.leave(`voice:${channelId}`);
       await Promise.all([
         removeVoiceParticipant(channelId, userId),
@@ -452,7 +467,7 @@ export function registerVoiceHandlers(ctx: SocketContext): void {
 
       const participants = await getVoiceParticipants(channelId);
       socket.to(`voice:${channelId}`).emit('voice-user-left', { userId });
-      if (channel?.serverId) io.to(`server:${channel.serverId}`).emit('server-voice-participants', { serverId: channel.serverId, channelId, participants: participants.map(publicVoiceParticipant) });
+      if (channel?.serverId) void emitVoicePresenceScoped({ io, channel: { id: channelId, serverId: channel.serverId, isPrivate: channel.isPrivate, categoryId: channel.categoryId, ageRestricted: channel.ageRestricted }, event: 'server-voice-participants', payload: { serverId: channel.serverId, channelId, participants: participants.map(publicVoiceParticipant) } });
 
       // E2EE: If participants remain, debounce key rotation (forward secrecy).
       // Shared with the abrupt-disconnect path in connection.ts so the
@@ -504,11 +519,14 @@ export function registerVoiceHandlers(ctx: SocketContext): void {
       const updated = await setVoiceParticipantScreenSharing(payload.channelId, userId, payload.isScreenSharing);
       if (!updated) return;
       refreshVoiceTTL(payload.channelId).catch(() => {});
-      const channel = await prisma.channel.findUnique({ where: { id: payload.channelId }, select: { serverId: true } }).catch(() => null);
+      const channel = await prisma.channel.findUnique({ where: { id: payload.channelId }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } }).catch(() => null);
       if (!channel?.serverId) return;
       const participants = await getVoiceParticipants(payload.channelId);
-      io.to(`server:${channel.serverId}`).emit('server-voice-participants', {
-        serverId: channel.serverId, channelId: payload.channelId, participants: participants.map(publicVoiceParticipant),
+      void emitVoicePresenceScoped({
+        io,
+        channel: { id: payload.channelId, serverId: channel.serverId, isPrivate: channel.isPrivate, categoryId: channel.categoryId, ageRestricted: channel.ageRestricted },
+        event: 'server-voice-participants',
+        payload: { serverId: channel.serverId, channelId: payload.channelId, participants: participants.map(publicVoiceParticipant) },
       });
     } catch (err) {
       logger.error({ err, userId, event: 'voice-set-screenshare' }, 'socket handler error');
@@ -672,8 +690,8 @@ export function registerVoiceHandlers(ctx: SocketContext): void {
       if (payload.fromChannelId === payload.toChannelId) return;
 
       const [fromChannel, toChannel] = await Promise.all([
-        prisma.channel.findUnique({ where: { id: payload.fromChannelId }, select: { serverId: true, type: true } }),
-        prisma.channel.findUnique({ where: { id: payload.toChannelId }, select: { serverId: true, type: true } }),
+        prisma.channel.findUnique({ where: { id: payload.fromChannelId }, select: { serverId: true, type: true, isPrivate: true, categoryId: true, ageRestricted: true } }),
+        prisma.channel.findUnique({ where: { id: payload.toChannelId }, select: { serverId: true, type: true, isPrivate: true, categoryId: true, ageRestricted: true } }),
       ]);
       if (!fromChannel?.serverId || !toChannel?.serverId) return;
       if (fromChannel.serverId !== toChannel.serverId) return;
@@ -715,6 +733,15 @@ export function registerVoiceHandlers(ctx: SocketContext): void {
       if (!(await isInVoiceChannel(payload.fromChannelId, payload.targetUserId))) return;
       const userData = await getVoiceParticipantData(payload.fromChannelId, payload.targetUserId);
       if (!userData) return;
+
+      // Voice age gate: never move a MINOR target into an age-restricted channel.
+      // `move-voice-user` is the one voice-occupant entry path besides
+      // `join-voice-channel`, so it needs the same gate — otherwise a moderator
+      // could seed a minor as an occupant of an age-restricted room (its media is
+      // separately denied at /livekit/token, but the roster/room membership would
+      // still leak). Checks the TARGET's age; silent return matches this handler's
+      // failure style. Zero query when toChannel is not age-restricted.
+      if (await denyIfAgeGated(toChannel, payload.targetUserId)) return;
 
       await Promise.all([
         removeVoiceParticipant(payload.fromChannelId, payload.targetUserId),
@@ -762,11 +789,17 @@ export function registerVoiceHandlers(ctx: SocketContext): void {
         getVoiceParticipants(payload.fromChannelId),
         getVoiceParticipants(payload.toChannelId),
       ]);
-      io.to(`server:${fromChannel.serverId}`).emit('server-voice-participants', {
-        serverId: fromChannel.serverId, channelId: payload.fromChannelId, participants: fromList.map(publicVoiceParticipant),
+      void emitVoicePresenceScoped({
+        io,
+        channel: { id: payload.fromChannelId, serverId: fromChannel.serverId, isPrivate: fromChannel.isPrivate, categoryId: fromChannel.categoryId, ageRestricted: fromChannel.ageRestricted },
+        event: 'server-voice-participants',
+        payload: { serverId: fromChannel.serverId, channelId: payload.fromChannelId, participants: fromList.map(publicVoiceParticipant) },
       });
-      io.to(`server:${fromChannel.serverId}`).emit('server-voice-participants', {
-        serverId: fromChannel.serverId, channelId: payload.toChannelId, participants: toList.map(publicVoiceParticipant),
+      void emitVoicePresenceScoped({
+        io,
+        channel: { id: payload.toChannelId, serverId: toChannel.serverId, isPrivate: toChannel.isPrivate, categoryId: toChannel.categoryId, ageRestricted: toChannel.ageRestricted },
+        event: 'server-voice-participants',
+        payload: { serverId: fromChannel.serverId, channelId: payload.toChannelId, participants: toList.map(publicVoiceParticipant) },
       });
 
       // Forward secrecy at the involuntary-move boundary: the moved member

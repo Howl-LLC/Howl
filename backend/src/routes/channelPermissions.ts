@@ -137,7 +137,11 @@ router.put('/:serverId/channels/:channelId/permissions', validateUuidParams('ser
 
   log.info({ serverId, channelId, targetType, targetId, actor: req.userId }, 'Channel permission override updated');
   const io = req.app.get('io');
-  if (io) io.to(`server:${serverId}`).emit('channel-permissions-updated', { serverId, channelId });
+  // Elide the channel UUID for private channels. The client discards
+  // channelId here — it reads only serverId to trigger a permission-filtered
+  // refetch — so broadcasting a private channel's id to the whole server room
+  // is a pure private-UUID enumeration leak. The refetch pulse still fires.
+  if (io) io.to(`server:${serverId}`).emit('channel-permissions-updated', { serverId, channelId: channel.isPrivate ? undefined : channelId });
   res.json(override);
 }));
 
@@ -152,13 +156,14 @@ router.delete('/:serverId/channels/:channelId/permissions/:overrideId', validate
   if (!hasPermission(ctx, 'manageChannels') && !hasPermission(ctx, 'manageRoles')) {
     return res.status(403).json({ error: 'You need Manage Channels or Manage Roles permission' });
   }
-  const override = await prisma.channelPermissionOverride.findFirst({ where: { id: overrideId, channelId } });
+  const override = await prisma.channelPermissionOverride.findFirst({ where: { id: overrideId, channelId }, include: { channel: { select: { isPrivate: true } } } });
   if (!override) return res.status(404).json({ error: 'Permission override not found' });
 
   await prisma.channelPermissionOverride.delete({ where: { id: overrideId } });
   log.info({ serverId, channelId, overrideId, actor: req.userId }, 'Channel permission override deleted');
   const io = req.app.get('io');
-  if (io) io.to(`server:${serverId}`).emit('channel-permissions-updated', { serverId, channelId });
+  // Elide the channel UUID for private channels — see the PUT handler above.
+  if (io) io.to(`server:${serverId}`).emit('channel-permissions-updated', { serverId, channelId: override.channel.isPrivate ? undefined : channelId });
   res.json({ success: true });
 }));
 
@@ -253,7 +258,9 @@ router.put('/:serverId/categories/:categoryId/permissions', validateUuidParams('
 
   log.info({ serverId, categoryId, targetType, targetId, actor: req.userId }, 'Category permission override updated');
   const io = req.app.get('io');
-  if (io) io.to(`server:${serverId}`).emit('category-permissions-updated', { serverId, categoryId });
+  // Elide the category UUID for private categories, same rationale as the
+  // channel handlers: the client reads only serverId to refetch.
+  if (io) io.to(`server:${serverId}`).emit('category-permissions-updated', { serverId, categoryId: category.isPrivate ? undefined : categoryId });
   res.json(override);
 }));
 
@@ -268,13 +275,14 @@ router.delete('/:serverId/categories/:categoryId/permissions/:overrideId', valid
   if (!hasPermission(ctx, 'manageChannels') && !hasPermission(ctx, 'manageRoles')) {
     return res.status(403).json({ error: 'You need Manage Channels or Manage Roles permission' });
   }
-  const override = await prisma.categoryPermissionOverride.findFirst({ where: { id: overrideId, categoryId } });
+  const override = await prisma.categoryPermissionOverride.findFirst({ where: { id: overrideId, categoryId }, include: { category: { select: { isPrivate: true } } } });
   if (!override) return res.status(404).json({ error: 'Permission override not found' });
 
   await prisma.categoryPermissionOverride.delete({ where: { id: overrideId } });
   log.info({ serverId, categoryId, overrideId, actor: req.userId }, 'Category permission override deleted');
   const io = req.app.get('io');
-  if (io) io.to(`server:${serverId}`).emit('category-permissions-updated', { serverId, categoryId });
+  // Elide the category UUID for private categories — see the PUT handler above.
+  if (io) io.to(`server:${serverId}`).emit('category-permissions-updated', { serverId, categoryId: override.category.isPrivate ? undefined : categoryId });
   res.json({ success: true });
 }));
 

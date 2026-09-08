@@ -546,6 +546,29 @@ router.patch(
     // There is no server-level age gate — per-channel age-restriction is the
     // only NSFW concept now.
     if (decision === 'accept') {
+      // Mirror the ban + parental-restriction gates the sibling join paths run
+      // (routes/invites.ts, routes/publicServer.ts), keyed on the APPLICANT
+      // (app.userId), not the reviewer. Without these, accepting a stale
+      // application re-admits a banned user or overrides a parent's server-join
+      // block. Runs before the verificationLevel gates and the
+      // serverMember.upsert below.
+      const [applicantBan, applicantFamilyRestriction] = await Promise.all([
+        prisma.serverBan.findUnique({
+          where: { serverId_userId: { serverId, userId: app.userId } },
+          select: { id: true },
+        }),
+        prisma.familyRestriction.findFirst({
+          where: { familyLink: { childId: app.userId, status: 'active' }, blockServerJoin: true },
+          select: { id: true },
+        }),
+      ]);
+      if (applicantBan) {
+        return res.status(403).json({ error: 'This user is banned from this server.' });
+      }
+      if (applicantFamilyRestriction) {
+        return res.status(403).json({ error: 'A parent account has restricted this user from joining new servers.' });
+      }
+
       const settings = await prisma.serverSettings.findUnique({
         where: { serverId },
         select: { verificationLevel: true },

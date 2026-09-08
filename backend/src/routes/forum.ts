@@ -13,7 +13,8 @@ import {
   updateForumMessageSchema, forumPostListQuery, forumMessageListQuery, forumReactionSchema,
 } from '../schemas.js';
 import { getParam, AUTHOR_USER_SELECT, getEffectivePlan, loadPermissionContext } from '../utils.js';
-import { hasChannelPermission } from '../utils/channelPermissions.js';
+import { hasChannelPermission, assertChannelVisible, assertChannelReadable } from '../utils/channelPermissions.js';
+import { denyIfAgeGated } from '../utils/ageGate.js';
 import { logger } from '../logger.js';
 import { redis } from '../redis.js';
 import { deleteUploadedFile } from './upload.js';
@@ -84,7 +85,7 @@ async function fetchChannelWithOverrides(channelId: string, serverId: string) {
     where: { id: channelId, serverId },
     select: {
       id: true, serverId: true, type: true, categoryId: true,
-      isPrivate: true, requireTags: true, postSlowMode: true, messageSlowMode: true,
+      isPrivate: true, ageRestricted: true, requireTags: true, postSlowMode: true, messageSlowMode: true,
       postGuidelines: true, defaultSortOrder: true, defaultReaction: true,
     },
   });
@@ -143,11 +144,15 @@ router.get('/:serverId/channels/:channelId/posts', validateUuidParams('serverId'
 
   const result = await fetchChannelWithOverrides(channelId, serverId);
   if (!result) return res.status(404).json({ error: 'Channel not found' });
+  // full read gate (private → 404, readMessageHistory → 403) BEFORE the
+  // forum-type check, so a private non-forum channel does not leak existence/type
+  // via a 400. The post list embeds titles + content previews, so the
+  // readMessageHistory half applies here as it does on post-detail (:214).
+  const gate = assertChannelReadable(permCtx, result.channel, result.chOverrides, result.catOverrides);
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+  const ageDeny = await denyIfAgeGated(result.channel, req.userId);
+  if (ageDeny) return res.status(403).json(ageDeny);
   if (result.channel.type !== 'forum') return res.status(400).json({ error: 'Channel is not a forum' });
-
-  if (result.channel.isPrivate && !hasChannelPermission(permCtx,'viewChannels', result.chOverrides, result.catOverrides, undefined, { requireOverride: true })) {
-    return res.status(404).json({ error: 'Channel not found' });
-  }
 
   const { before, sortBy, tagId } = req.query as unknown as { before?: string; sortBy: string; tagId?: string };
   const limit = Math.min(Number(req.query.limit) || 20, 50);
@@ -234,6 +239,8 @@ router.get('/:serverId/channels/:channelId/posts/:postId', validateUuidParams('s
   if (!hasChannelPermission(permCtx,'readMessageHistory', result.chOverrides, result.catOverrides)) {
     return res.status(403).json({ error: 'You do not have permission to read message history' });
   }
+  const ageDeny = await denyIfAgeGated(result.channel, req.userId);
+  if (ageDeny) return res.status(403).json(ageDeny);
 
   const post = await prisma.forumPost.findFirst({
     where: { id: postId, channelId },
@@ -279,11 +286,18 @@ router.post('/:serverId/channels/:channelId/posts', validateUuidParams('serverId
 
   const result = await fetchChannelWithOverrides(channelId, serverId);
   if (!result) return res.status(404).json({ error: 'Channel not found' });
-  if (result.channel.type !== 'forum') return res.status(400).json({ error: 'Channel is not a forum' });
-
+  // Visibility BEFORE the forum-type check, so a private channel does not leak its
+  // existence (and that it is not a forum) via a 400 to a non-viewer.
   if (result.channel.isPrivate && !hasChannelPermission(permCtx,'viewChannels', result.chOverrides, result.catOverrides, undefined, { requireOverride: true })) {
     return res.status(404).json({ error: 'Channel not found' });
   }
+  // Age gate AFTER the visibility gate (a non-viewer already got 404): a minor
+  // who CAN see this public age-restricted forum is blocked from creating a post
+  // (mirrors messages.ts send-path denyIfAgeGated).
+  const ageDeny = await denyIfAgeGated(result.channel, req.userId);
+  if (ageDeny) return res.status(403).json(ageDeny);
+  if (result.channel.type !== 'forum') return res.status(400).json({ error: 'Channel is not a forum' });
+
   if (!hasChannelPermission(permCtx,'createPosts', result.chOverrides, result.catOverrides)) {
     return res.status(403).json({ error: 'You do not have permission to create posts' });
   }
@@ -387,6 +401,19 @@ router.patch('/:serverId/channels/:channelId/posts/:postId', validateUuidParams(
   const result = await fetchChannelWithOverrides(channelId, serverId);
   if (!result) return res.status(404).json({ error: 'Channel not found' });
 
+  // Gate channel visibility before the post lookup, so a non-viewer of
+  // a private channel cannot distinguish "post exists" (403 Not authorized) from
+  // "post does not exist" (404) — the existence oracle collapses to one 404.
+  const vis = assertChannelVisible(permCtx, result.channel, result.chOverrides, result.catOverrides);
+  if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
+  // Age gate AFTER the visibility gate: this moderator-capable PATCH echoes the
+  // post's stored title+content in its response (and lets a moderator edit/pin
+  // others' posts), so an age-restricted post's 18+ content must not be reachable
+  // by a minor here — mirrors the gated messages.ts pin/unpin, not the ungated
+  // author-only message edit. The read path (GET post) is age-gated too.
+  const ageDeny = await denyIfAgeGated(result.channel, req.userId);
+  if (ageDeny) return res.status(403).json(ageDeny);
+
   const post = await prisma.forumPost.findFirst({ where: { id: postId, channelId } });
   if (!post) return res.status(404).json({ error: 'Post not found' });
 
@@ -478,6 +505,12 @@ router.delete('/:serverId/channels/:channelId/posts/:postId', validateUuidParams
   const result = await fetchChannelWithOverrides(channelId, serverId);
   if (!result) return res.status(404).json({ error: 'Channel not found' });
 
+  // Gate channel visibility before the post lookup, so a non-viewer of
+  // a private channel cannot distinguish "post exists" (403 Not authorized) from
+  // "post does not exist" (404) — the existence oracle collapses to one 404.
+  const vis = assertChannelVisible(permCtx, result.channel, result.chOverrides, result.catOverrides);
+  if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
+
   const post = await prisma.forumPost.findFirst({ where: { id: postId, channelId } });
   if (!post) return res.status(404).json({ error: 'Post not found' });
 
@@ -524,6 +557,18 @@ router.post('/:serverId/channels/:channelId/posts/:postId/messages', validateUui
 
   const result = await fetchChannelWithOverrides(channelId, serverId);
   if (!result) return res.status(404).json({ error: 'Channel not found' });
+
+  // gap (write): the private-channel visibility half was missing here, so a
+  // member without viewChannels on a private forum could inject messages. Mirror
+  // the send path (messages.ts:957-963) — visibility only, plus the existing
+  // sendMessagesInPosts action check; posting does not require readMessageHistory.
+  const vis = assertChannelVisible(permCtx, result.channel, result.chOverrides, result.catOverrides);
+  if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
+  // Age gate AFTER the visibility gate: a minor who CAN see this public
+  // age-restricted forum is blocked from posting a message (mirrors messages.ts
+  // send-path denyIfAgeGated).
+  const ageDeny = await denyIfAgeGated(result.channel, req.userId);
+  if (ageDeny) return res.status(403).json(ageDeny);
 
   if (!hasChannelPermission(permCtx,'sendMessagesInPosts', result.chOverrides, result.catOverrides)) {
     return res.status(403).json({ error: 'You do not have permission to send messages in posts' });
@@ -614,9 +659,13 @@ router.get('/:serverId/channels/:channelId/posts/:postId/messages', validateUuid
   const result = await fetchChannelWithOverrides(channelId, serverId);
   if (!result) return res.status(404).json({ error: 'Channel not found' });
 
-  if (!hasChannelPermission(permCtx,'readMessageHistory', result.chOverrides, result.catOverrides)) {
-    return res.status(403).json({ error: 'You do not have permission to read message history' });
-  }
+  // gap (read, the HIGH): the isPrivate → 404 visibility half was missing —
+  // only readMessageHistory was checked — so any member with the @everyone
+  // readMessageHistory baseline could dump a private forum post's full transcript.
+  const gate = assertChannelReadable(permCtx, result.channel, result.chOverrides, result.catOverrides);
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+  const ageDeny = await denyIfAgeGated(result.channel, req.userId);
+  if (ageDeny) return res.status(403).json(ageDeny);
 
   const post = await prisma.forumPost.findFirst({ where: { id: postId, channelId }, select: { id: true } });
   if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -700,7 +749,11 @@ router.patch('/:serverId/channels/:channelId/posts/:postId/messages/:messageId',
     return res.status(404).json({ error: 'Channel not found' });
   }
 
-  const message = await prisma.forumMessage.findFirst({ where: { id: messageId, forumPostId: postId } });
+  // Bind the message to the gated channel (via its post), so the F-041 gate above
+  // — computed on the URL channelId — is not a no-op. Without `forumPost: { channelId }`
+  // the lookup matched by id+postId across ANY server, letting an owner of an
+  // unrelated public forum edit/delete arbitrary forum messages cross-tenant.
+  const message = await prisma.forumMessage.findFirst({ where: { id: messageId, forumPostId: postId, forumPost: { channelId } } });
   if (!message) return res.status(404).json({ error: 'Message not found' });
   if (message.authorId !== req.userId) return res.status(403).json({ error: 'You can only edit your own messages' });
 
@@ -752,7 +805,11 @@ router.delete('/:serverId/channels/:channelId/posts/:postId/messages/:messageId'
     return res.status(404).json({ error: 'Channel not found' });
   }
 
-  const message = await prisma.forumMessage.findFirst({ where: { id: messageId, forumPostId: postId } });
+  // Bind the message to the gated channel (via its post), so the F-041 gate above
+  // — computed on the URL channelId — is not a no-op. Without `forumPost: { channelId }`
+  // the lookup matched by id+postId across ANY server, letting an owner of an
+  // unrelated public forum edit/delete arbitrary forum messages cross-tenant.
+  const message = await prisma.forumMessage.findFirst({ where: { id: messageId, forumPostId: postId, forumPost: { channelId } } });
   if (!message) return res.status(404).json({ error: 'Message not found' });
 
   const canManage = hasChannelPermission(permCtx,'manageMessages', result.chOverrides, result.catOverrides);
@@ -871,8 +928,11 @@ router.delete('/:serverId/channels/:channelId/posts/:postId/messages/:messageId/
     return res.status(404).json({ error: 'Channel not found' });
   }
 
+  // Bind the reaction's message to the gated channel (mirrors the POST twin), so
+  // the F-041 gate is not a no-op and a member cannot mutate reaction state on a
+  // message in a channel they cannot see by naming a visible channel in the URL.
   const reaction = await prisma.forumMessageReaction.findFirst({
-    where: { messageId, userId: req.userId, emoji },
+    where: { messageId, userId: req.userId, emoji, message: { forumPost: { channelId: channelIdForPerm } } },
   });
   if (!reaction) return res.status(404).json({ error: 'Reaction not found' });
 

@@ -1,0 +1,7 @@
+# Local E2E MLS rig — these hold live-format JWT access/refresh tokens and a
+# throwaway fixture password for two seeded accounts. They belong to the MLS/audit
+# strand and must NEVER be committed. Ignored here so a `git add -A` cannot sweep
+# them into a security-fix commit. (Stage/push batches with an explicit pathspec.)
+/scripts/e2e-mls-fixture.json
+/scripts/e2e-mls-run.mjs
+/scripts/e2e-mls-seed.ts

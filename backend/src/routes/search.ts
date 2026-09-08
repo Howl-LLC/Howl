@@ -8,7 +8,7 @@ import { validate } from '../middleware/validate.js';
 import { searchMessagesSchema, searchDmMessagesSchema } from '../schemas.js';
 import { logger } from '../logger.js';
 import { hasPermission, getEffectivePlan, loadPermissionContext } from '../utils.js';
-import { hasChannelPermission } from '../utils/channelPermissions.js';
+import { assertChannelReadable } from '../utils/channelPermissions.js';
 import rateLimit from 'express-rate-limit';
 import { createRateLimitStore, RATE_LIMIT_DEFAULTS } from '../rateLimitStore.js';
 import { decryptMessageContent } from '../services/dmCrypto.js';
@@ -110,62 +110,78 @@ router.get('/messages', authenticateToken, searchLimiter, validate(searchMessage
       // search hit would otherwise surface message content + attachment URLs
       // from channels the user is not allowed to read.
       const visibleChannels = isMinor ? channels.filter((c) => !c.ageRestricted) : channels;
-      accessibleChannelIds = visibleChannels.map(c => c.id);
 
-      // Filter out private channels the user is denied access to via overrides
-      const privateChannels = visibleChannels.filter(c => c.isPrivate);
-      if (privateChannels.length > 0) {
-        const privateChannelIds = privateChannels.map(c => c.id);
-        const privateCategoryIds = [...new Set(privateChannels.map(c => c.categoryId).filter(Boolean))] as string[];
-        const [chOverrides, catOverrides] = await Promise.all([
-          prisma.channelPermissionOverride.findMany({ where: { channelId: { in: privateChannelIds } }, take: 5000 }),
-          privateCategoryIds.length > 0
-            ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: { in: privateCategoryIds } }, take: 5000 })
-            : Promise.resolve([]),
-        ]);
-        const deniedChannelIds = new Set<string>();
-        for (const ch of privateChannels) {
-          const chOv = chOverrides.filter(o => o.channelId === ch.id);
-          const catOv = ch.categoryId ? catOverrides.filter(o => o.categoryId === ch.categoryId) : [];
-          if (!hasChannelPermission(permCtx, 'viewChannels', chOv, catOv)) {
-            deniedChannelIds.add(ch.id);
-          }
-        }
-        if (deniedChannelIds.size > 0) {
-          accessibleChannelIds = accessibleChannelIds.filter(id => !deniedChannelIds.has(id));
-        }
-      }
+      // gate EVERY candidate channel through the shared read gate. The old
+      // filter only subtracted private channels carrying an explicit viewChannels
+      // DENY and used the server-base `hasChannelPermission` (no requireOverride),
+      // so a normally-configured private channel — isPrivate with a role ALLOW
+      // override and no @everyone entry — passed via the @everyone baseline and
+      // leaked. It also ignored channel-level readMessageHistory DENY overrides
+      // on public channels. Filtering on `.ok` (rather than returning the
+      // helper's 404/403) keeps a server-wide search from becoming a per-channel
+      // existence oracle: unreadable channels are silently omitted.
+      const visibleChannelIds = visibleChannels.map(c => c.id);
+      const visibleCategoryIds = [...new Set(visibleChannels.map(c => c.categoryId).filter(Boolean))] as string[];
+      // take: match the visibility-filter convention (utils/channelVisibility.ts
+      // uses 10000) and order deterministically. A DENY override dropped by
+      // truncation on a PUBLIC channel would fail OPEN (the channel falls back to
+      // the @everyone readMessageHistory:true base and is wrongly admitted), so the
+      // cap must sit above any realistic per-server override count; private channels
+      // truncate fail-CLOSED via requireOverride.
+      const [chOverrides, catOverrides] = await Promise.all([
+        visibleChannelIds.length > 0
+          ? prisma.channelPermissionOverride.findMany({ where: { channelId: { in: visibleChannelIds } }, orderBy: { id: 'asc' }, take: 10000 })
+          : Promise.resolve([]),
+        visibleCategoryIds.length > 0
+          ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: { in: visibleCategoryIds } }, orderBy: { id: 'asc' }, take: 10000 })
+          : Promise.resolve([]),
+      ]);
+      accessibleChannelIds = visibleChannels
+        .filter(ch => assertChannelReadable(
+          permCtx,
+          ch,
+          chOverrides.filter(o => o.channelId === ch.id),
+          ch.categoryId ? catOverrides.filter(o => o.categoryId === ch.categoryId) : [],
+        ).ok)
+        .map(ch => ch.id);
 
       if (accessibleChannelIds.length === 0) return res.json({ results: [], total: 0, hasMore: false });
     } else if (channelId) {
       const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true, isPrivate: true, categoryId: true, ageRestricted: true } });
-      if (channel) {
-        const ageGateDenial = await denyIfAgeGated(channel, req.userId!);
-        if (ageGateDenial) return res.status(403).json(ageGateDenial);
-        const [membership, permCtx] = await Promise.all([
-          prisma.serverMember.findUnique({
-            where: { userId_serverId: { userId: req.userId!, serverId: channel.serverId } },
-            include: { serverRole: true },
-          }),
-          loadPermissionContext(req.userId!, channel.serverId),
-        ]);
-        if (!membership || !permCtx) return res.status(403).json({ error: 'Not a member of this server' });
-        if (!hasPermission(permCtx, 'readMessageHistory')) {
-          return res.status(403).json({ error: 'You do not have permission to search message history in this server' });
-        }
-        // Check channel-level permission overrides for private channels
-        if (channel.isPrivate) {
-          const [chOverrides, catOverrides] = await Promise.all([
-            prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
-            channel.categoryId
-              ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
-              : Promise.resolve([]),
-          ]);
-          if (!hasChannelPermission(permCtx, 'viewChannels', chOverrides, catOverrides)) {
-            return res.status(404).json({ error: 'Channel not found' });
-          }
-        }
-      }
+      // a nonexistent channelId previously fell through the `if (channel)`
+      // guard to `accessibleChannelIds = [channelId]` and returned 200 {results:[]}
+      // — an inverted existence oracle. Return the same 404 a private-denied
+      // channel does, so the two are indistinguishable.
+      if (!channel) return res.status(404).json({ error: 'Channel not found' });
+      const [membership, permCtx] = await Promise.all([
+        prisma.serverMember.findUnique({
+          where: { userId_serverId: { userId: req.userId!, serverId: channel.serverId } },
+          include: { serverRole: true },
+        }),
+        loadPermissionContext(req.userId!, channel.serverId),
+      ]);
+      if (!membership || !permCtx) return res.status(403).json({ error: 'Not a member of this server' });
+      // Full channel read gate FIRST, ahead of the age gate: the old code applied
+      // only the isPrivate half and WITHOUT requireOverride (inert against a
+      // standard private channel), and never resolved readMessageHistory DENY
+      // overrides. Load the override chain for public channels too so the
+      // readMessageHistory half runs everywhere. Running this before denyIfAgeGated
+      // means a non-viewer of a private channel gets the visibility 404 and cannot
+      // distinguish an age-restricted private channel (403) from a nonexistent one;
+      // it also subsumes the old server-level readMessageHistory check (which is
+      // dropped here — the gate resolves readMessageHistory through the same chain).
+      const [chOverrides, catOverrides] = await Promise.all([
+        prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+        channel.categoryId
+          ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
+          : Promise.resolve([]),
+      ]);
+      const gate = assertChannelReadable(permCtx, channel, chOverrides, catOverrides);
+      if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+      // Age gate AFTER visibility: a minor who CAN see the channel is 403'd; a
+      // non-viewer was already indistinguishably 404'd above.
+      const ageGateDenial = await denyIfAgeGated(channel, req.userId!);
+      if (ageGateDenial) return res.status(403).json(ageGateDenial);
       accessibleChannelIds = [channelId];
     }
 

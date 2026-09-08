@@ -6,7 +6,8 @@ import { prisma } from '../db.js';
 import { logger } from '../logger.js';
 import { hasPermission, loadPermissionContext } from '../utils.js';
 import { hasChannelPermission } from '../utils/channelPermissions.js';
-import { denyIfAgeGated } from '../utils/ageGate.js';
+import { filterVisibleChannelIds } from '../utils/channelVisibility.js';
+import { denyIfAgeGated, loadIsMinor } from '../utils/ageGate.js';
 import { findUserVoiceChannel, refreshVoiceTTL, getVoiceParticipantsBatch } from '../redis.js';
 import { getActiveStageSpeakers } from '../routes/stages.js';
 import { isValidUUID, parseSocketPayload, typingPayload, setActivityPayload } from '../socketSchemas.js';
@@ -27,20 +28,28 @@ import { logActivityToHistory, closeActivityHistory } from '../services/activity
  * `join-server` handler calls this with a single-element array; the behavior and
  * payload shape match the pre-batch per-server form.
  */
-export async function emitServersInitialState(socket: Socket, serverIds: string[]): Promise<void> {
+export async function emitServersInitialState(socket: Socket, serverIds: string[], userId: string): Promise<void> {
   if (serverIds.length === 0) return;
   const [voiceChannels, stageChannels] = await Promise.all([
     prisma.channel.findMany({
       where: { serverId: { in: serverIds }, type: 'voice' },
-      select: { id: true, serverId: true },
+      // Voice age gate: the voice roster snapshot must be
+      // filtered by channel visibility (public → all; private → viewChannels via
+      // override) AND by age (age-restricted → drop for minors), so pull the
+      // flags filterVisibleChannelIds needs.
+      select: { id: true, serverId: true, isPrivate: true, categoryId: true, ageRestricted: true },
       take: 5000,
     }),
     prisma.channel.findMany({
       where: { serverId: { in: serverIds }, type: 'stage' },
-      select: { id: true, serverId: true },
+      // The stage roster snapshot must be filtered by
+      // channel visibility, so pull the flags filterVisibleChannelIds needs.
+      select: { id: true, serverId: true, isPrivate: true, categoryId: true, ageRestricted: true },
       take: 5000,
     }),
   ]);
+  const stageChannelById = new Map(stageChannels.map(c => [c.id, c]));
+  const voiceChannelById = new Map(voiceChannels.map(c => [c.id, c]));
 
   // Partition channel IDs by server.
   const voiceByServer = new Map<string, string[]>();
@@ -68,12 +77,56 @@ export async function emitServersInitialState(socket: Socket, serverIds: string[
   const stageParticipantsById = new Map<string, Array<{ userId: string; username: string; avatar?: string }>>();
   allStageIds.forEach((id, i) => stageParticipantsById.set(id, stageLists[i]));
 
+  // Age gate for the stage-roster snapshot is user-global (one DOB), so resolve
+  // it once and lazily — only when at least one server has an active stage to
+  // filter, matching the existing lazy `loadPermissionContext` below.
+  let isMinorCache: boolean | null = null;
+  const getIsMinor = async (): Promise<boolean> => {
+    if (isMinorCache === null) isMinorCache = await loadIsMinor(userId);
+    return isMinorCache;
+  };
+
   for (const serverId of serverIds) {
+    // Permission context for this server, loaded at most once and lazily — the
+    // voice private-channel filter and the stage-roster filter both need it, so
+    // a server with only public voice channels and no active stages pays zero
+    // extra queries.
+    let permCtxLoaded = false;
+    let permCtx: Awaited<ReturnType<typeof loadPermissionContext>> = null;
+    const getPermCtx = async (): Promise<typeof permCtx> => {
+      if (!permCtxLoaded) { permCtx = await loadPermissionContext(userId, serverId); permCtxLoaded = true; }
+      return permCtx;
+    };
+
     const voiceIds = voiceByServer.get(serverId) ?? [];
     const voiceMap: Record<string, Array<{ userId: string; username: string; avatar?: string; banner?: string }>> = {};
     for (const id of voiceIds) {
       const list = voiceParticipantsById.get(id) ?? [];
       if (list.length > 0) voiceMap[id] = list;
+    }
+    // Voice age gate: drop PRIVATE voice channels the connecting
+    // user cannot VIEW, AND age-restricted voice channels for a minor, so a
+    // (re)connect does not re-leak a private voice channel's occupant roster or
+    // hand a minor the roster of an age-restricted channel they cannot join.
+    // viewOnly matches the authoritative voice-join handler (public voice
+    // channels skip the override check); isMinor mirrors the join-voice age gate.
+    // Public, non-age-restricted channels never need filtering, so a server with
+    // only those pays zero extra queries (permCtx + isMinor stay unloaded).
+    const filterableVoiceIds = Object.keys(voiceMap).filter(id => {
+      const ch = voiceChannelById.get(id);
+      return ch?.isPrivate || ch?.ageRestricted;
+    });
+    if (filterableVoiceIds.length > 0) {
+      const [ctx, isMinor] = await Promise.all([getPermCtx(), getIsMinor()]);
+      const descriptors = filterableVoiceIds
+        .map(id => voiceChannelById.get(id))
+        .filter((c): c is NonNullable<typeof c> => !!c);
+      const visibleIds = ctx
+        ? new Set(await filterVisibleChannelIds(ctx, descriptors, { viewOnly: true, isMinor }))
+        : new Set<string>();
+      for (const id of filterableVoiceIds) {
+        if (!visibleIds.has(id)) delete voiceMap[id];
+      }
     }
     // Always emit — mirrors pre-extraction behavior so the client's onInitial
     // handler fires even when the server has no active voice participants.
@@ -87,7 +140,30 @@ export async function emitServersInitialState(socket: Socket, serverIds: string[
     }
     // Only emit stage initial if there are active speakers — matches pre-extraction gate.
     if (Object.keys(stageMap).length > 0) {
-      socket.emit('server-stage-participants-initial', { serverId, participantsByChannel: stageMap });
+      // Drop stage channels the connecting user cannot VIEW
+      // so a (re)connect does not re-leak a private / restricted stage's speaker
+      // roster. Gate on viewChannels only (viewOnly) to match the realtime
+      // server-stage-participants scope + the authoritative stage-join handler.
+      // Also drop age-restricted stages for a minor (isMinor),
+      // mirroring the realtime `emitStageEventScoped` minor-drop.
+      const activeStageIds = Object.keys(stageMap);
+      const [permCtx, isMinor] = await Promise.all([
+        getPermCtx(),
+        getIsMinor(),
+      ]);
+      const descriptors = activeStageIds
+        .map(id => stageChannelById.get(id))
+        .filter((c): c is NonNullable<typeof c> => !!c);
+      const visibleIds = permCtx
+        ? new Set(await filterVisibleChannelIds(permCtx, descriptors, { viewOnly: true, isMinor }))
+        : new Set<string>();
+      const visibleStageMap: typeof stageMap = {};
+      for (const id of activeStageIds) {
+        if (visibleIds.has(id)) visibleStageMap[id] = stageMap[id];
+      }
+      if (Object.keys(visibleStageMap).length > 0) {
+        socket.emit('server-stage-participants-initial', { serverId, participantsByChannel: visibleStageMap });
+      }
     }
   }
 }
@@ -317,7 +393,7 @@ export function registerChannelHandlers(ctx: SocketContext): void {
       ]);
       if (!member || ban) return;
       socket.join(`server:${serverId}`);
-      await emitServersInitialState(socket, [serverId]);
+      await emitServersInitialState(socket, [serverId], userId);
     } catch (err) {
       logger.error({ err, userId, event: 'join-server' }, 'socket handler error');
     }

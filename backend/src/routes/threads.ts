@@ -10,11 +10,13 @@ import { validate } from '../middleware/validate.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import { checkUploadAttachment } from '../services/uploadProvenance.js';
 import { createThreadSchema, editThreadSchema, editThreadMessageSchema, sendThreadMessageSchema, getThreadMessagesQuery, reactMessageSchema } from '../schemas.js';
-import { getParam, hasPermission, loadPermissionContext, AUTHOR_USER_SELECT } from '../utils.js';
+import { getParam, hasPermission, loadPermissionContext, assertChannelVisible, assertChannelReadable, AUTHOR_USER_SELECT } from '../utils.js';
 import { logger } from '../logger.js';
 import { deleteUploadedFile } from './upload.js';
 import { createAuditLog } from './serverSettings.js';
 import { getMentionedUserIds } from './messages.js';
+import { loadChannelNotifyGate, filterUsersWhoCanViewChannel } from '../utils/channelVisibility.js';
+import { denyIfAgeGated, loadIsMinor } from '../utils/ageGate.js';
 import { applyBadgePrefs } from '../utils/badges.js';
 import { getClientIp } from '../utils/clientIp.js';
 
@@ -56,6 +58,30 @@ const threadMsgLimiter = rateLimit({ ...RATE_LIMIT_DEFAULTS,
 });
 
 // Helpers
+
+/**
+ * load a channel row + its override chain for the shared read/visibility
+ * gate. This file had ZERO channel-level permission logic — every handler
+ * authorized on server membership plus a server-level `hasPermission`, never the
+ * channel's `isPrivate` / override chain — so a member could read and write
+ * threads in private channels they cannot see. Callers pass `thread.channelId`
+ * (NOT the URL `:channelId`, which some handlers never cross-check). Returns null
+ * when the channel is missing or not in this server (caller returns 404).
+ */
+async function loadChannelForGate(channelId: string, serverId: string) {
+  const channel = await prisma.channel.findUnique({
+    where: { id: channelId },
+    select: { id: true, serverId: true, isPrivate: true, categoryId: true, ageRestricted: true },
+  });
+  if (!channel || channel.serverId !== serverId) return null;
+  const [chOverrides, catOverrides] = await Promise.all([
+    prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+    channel.categoryId
+      ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
+      : Promise.resolve([]),
+  ]);
+  return { channel, chOverrides, catOverrides };
+}
 
 function normalizeThreadMessage(msg: any) {
   const author = msg.author ?? {};
@@ -109,13 +135,45 @@ router.get(
     if (!req.userId) return res.status(401).json({ error: 'Missing user' });
     const serverId = getParam(req, 'serverId');
 
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
+    const [member, permCtx, isMinor] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      loadPermissionContext(req.userId, serverId),
+      loadIsMinor(req.userId),
+    ]);
+    if (!member || !permCtx) return res.status(403).json({ error: 'Not a server member' });
+
+    // Scope the server-wide list to the member's actually-readable
+    // channels. The old `channel.isPrivate:false` filter was a crude boolean that
+    // (a) leaked threads in PUBLIC channels whose @everyone readMessageHistory is
+    // denied via override, (b) ignored the age gate, and (c) hid private-channel
+    // threads the member CAN see. Mirror search.ts's per-channel `.ok` filter — a
+    // list, so denial is silent omission, never a per-channel 404/403 oracle.
+    const channels = await prisma.channel.findMany({
+      where: { serverId },
+      select: { id: true, isPrivate: true, categoryId: true, ageRestricted: true },
+      take: 1000,
     });
-    if (!member) return res.status(403).json({ error: 'Not a server member' });
+    const ageVisible = isMinor ? channels.filter((c) => !c.ageRestricted) : channels;
+    const chIds = ageVisible.map((c) => c.id);
+    const catIds = [...new Set(ageVisible.map((c) => c.categoryId).filter(Boolean))] as string[];
+    const [chOverrides, catOverrides] = await Promise.all([
+      chIds.length ? prisma.channelPermissionOverride.findMany({ where: { channelId: { in: chIds } }, orderBy: { id: 'asc' }, take: 10000 }) : Promise.resolve([]),
+      catIds.length ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: { in: catIds } }, orderBy: { id: 'asc' }, take: 10000 }) : Promise.resolve([]),
+    ]);
+    const visibleChannelIds = ageVisible
+      .filter((ch) => assertChannelReadable(
+        permCtx,
+        ch,
+        chOverrides.filter((o) => o.channelId === ch.id),
+        ch.categoryId ? catOverrides.filter((o) => o.categoryId === ch.categoryId) : [],
+      ).ok)
+      .map((ch) => ch.id);
+    if (visibleChannelIds.length === 0) return res.json([]);
 
     const threads = await prisma.thread.findMany({
-      where: { serverId, archived: false, channel: { serverId, isPrivate: false } },
+      where: { serverId, archived: false, channelId: { in: visibleChannelIds } },
       orderBy: { lastActivityAt: 'desc' },
       take: 200,
       select: {
@@ -166,7 +224,7 @@ router.post(
     const channelId = getParam(req, 'channelId');
 
     const [channel, member, permCtx] = await Promise.all([
-      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, type: true } }),
+      prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true, type: true, isPrivate: true, categoryId: true, ageRestricted: true } }),
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
@@ -174,8 +232,25 @@ router.post(
       loadPermissionContext(req.userId, serverId),
     ]);
     if (!channel || channel.serverId !== serverId) return res.status(404).json({ error: 'Channel not found' });
-    if (channel.type !== 'text') return res.status(400).json({ error: 'Threads can only be created in text channels' });
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    // (write): block creating a thread in a private channel the member
+    // cannot see. Visibility (404) runs BEFORE the channel-type 400 so a private
+    // NON-text channel does not leak its existence/type (mirrors forum.ts, which
+    // gates before its forum-type check); createThreads follows. This also
+    // transitively closes the ownership-gated PATCH/DELETE thread paths, which
+    // only become member-reachable once a member can author a thread here.
+    const [chOverrides, catOverrides] = await Promise.all([
+      prisma.channelPermissionOverride.findMany({ where: { channelId }, take: 200 }),
+      channel.categoryId ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 }) : Promise.resolve([]),
+    ]);
+    const vis = assertChannelVisible(permCtx, channel, chOverrides, catOverrides);
+    if (!vis.ok) return res.status(vis.status).json({ error: vis.error });
+    // Age gate AFTER the visibility gate (a non-viewer already got 404): a minor
+    // who CAN see this public age-restricted channel is blocked from creating a
+    // thread in it, mirroring the messages.ts send-path denyIfAgeGated.
+    const ageDeny = await denyIfAgeGated(channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
+    if (channel.type !== 'text') return res.status(400).json({ error: 'Threads can only be created in text channels' });
     if (!hasPermission(permCtx,'createThreads')) return res.status(403).json({ error: 'Missing createThreads permission' });
 
     const { name, parentMessageId, autoArchive, autoArchiveDuration } = req.body as {
@@ -240,7 +315,16 @@ router.post(
       createdAt: thread.createdAt.toISOString(),
       messageCount: 0,
     };
-    io?.to(`channel:${channelId}`).to(`server:${serverId}`).emit('thread-created', threadPayload);
+    // for a PRIVATE channel, fan the thread (incl. its name + the private
+    // channelId) only to the channel room — every viewer is already joined there,
+    // the same room live `new-message` uses — never the server-wide room, which
+    // includes members who cannot see the channel. Public channels keep the
+    // server-room copy so members who have not opened the channel still update
+    // their thread list / unread state.
+    const threadScope = channel.isPrivate
+      ? io?.to(`channel:${channelId}`)
+      : io?.to(`channel:${channelId}`).to(`server:${serverId}`);
+    threadScope?.emit('thread-created', threadPayload);
 
     await createAuditLog(serverId, req.userId, 'thread_create', 'channel', channelId, { threadId: thread.id, name: thread.name }).catch(() => {});
     log.info({ userId: req.userId, threadId: thread.id, channelId }, 'thread created');
@@ -280,7 +364,19 @@ router.get(
       loadPermissionContext(req.userId, serverId),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
-    if (!hasPermission(permCtx,'readMessageHistory')) return res.status(403).json({ error: 'Missing readMessageHistory permission' });
+    // gate the thread list (embeds message BODIES via the lastMessage
+    // preview) behind the channel read gate, replacing the server-level
+    // readMessageHistory check. A nonexistent/foreign channelId now returns 404
+    // (was 200 []) so private→404 and nonexistent are indistinguishable.
+    const gateInputs = await loadChannelForGate(channelId, serverId);
+    if (!gateInputs) return res.status(404).json({ error: 'Channel not found' });
+    const gate = assertChannelReadable(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+    // Age gate AFTER the read gate: a minor who cannot see the channel already
+    // got 404 above; only a minor who CAN read a public age-restricted channel
+    // reaches here and is 403'd. The lastMessage preview embeds 18+ bodies.
+    const ageDeny = await denyIfAgeGated(gateInputs.channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
 
     const archived = req.query.archived === 'true';
     const limit = Math.min(Number(req.query.limit) || 50, 100);
@@ -324,9 +420,12 @@ router.get(
     const serverId = getParam(req, 'serverId');
     const threadId = getParam(req, 'threadId');
 
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
+    const [member, permCtx] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      loadPermissionContext(req.userId, serverId),
+    ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
 
     const thread = await prisma.thread.findUnique({
@@ -336,6 +435,21 @@ router.get(
       },
     });
     if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
+    // gate on thread.channelId — this handler never cross-checks the URL
+    // :channelId against the thread, so gating on the URL param would be a silent
+    // no-op (an attacker could pass a public channel's id). Denial surfaces as
+    // 'Thread not found'/404, indistinguishable from a missing thread above.
+    {
+      const gateInputs = await loadChannelForGate(thread.channelId, serverId);
+      if (!gateInputs) return res.status(404).json({ error: 'Thread not found' });
+      const gate = assertChannelReadable(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+      if (!gate.ok) {
+        if (gate.status === 404) return res.status(404).json({ error: 'Thread not found' });
+        return res.status(gate.status).json({ error: gate.error });
+      }
+      const ageDeny = await denyIfAgeGated(gateInputs.channel, req.userId);
+      if (ageDeny) return res.status(403).json(ageDeny);
+    }
 
     // Get unique participants
     const participantRows = await prisma.threadMessage.findMany({
@@ -385,17 +499,32 @@ router.patch(
     const threadId = getParam(req, 'threadId');
 
     const [thread, member, permCtx] = await Promise.all([
-      prisma.thread.findUnique({ where: { id: threadId }, select: { authorId: true, channelId: true, serverId: true } }),
+      prisma.thread.findUnique({ where: { id: threadId }, select: { authorId: true, channelId: true, serverId: true, channel: { select: { isPrivate: true } } } }),
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
       }),
       loadPermissionContext(req.userId, serverId),
     ]);
+    // membership first, then gate the URL channel, THEN the resource
+    // existence check — so a non-member gets a uniform 403 (not 403-if-real vs
+    // 404-if-absent) and the gate round-trip is paid whether or not the thread
+    // exists (matches forum.ts). The resource check still binds thread→channelId,
+    // so a visible channel spoofed in the URL cannot reach a private-channel thread.
+    if (!member || !permCtx) return res.status(403).json({ error: 'Not a server member' });
+    const gate = await loadChannelForGate(channelId, serverId);
+    if (!gate) return res.status(404).json({ error: 'Thread not found' });
+    const vis = assertChannelVisible(permCtx, gate.channel, gate.chOverrides, gate.catOverrides);
+    if (!vis.ok) return res.status(404).json({ error: 'Thread not found' });
+    // Age gate AFTER the visibility gate: this moderator-capable PATCH echoes the
+    // thread's stored name in its response (and lets a moderator edit/archive
+    // others' threads), so a minor must not reach an age-restricted thread's 18+
+    // name here — the read path (thread detail) is age-gated too.
+    const ageDeny = await denyIfAgeGated(gate.channel, req.userId);
+    if (ageDeny) return res.status(403).json(ageDeny);
     if (!thread || thread.channelId !== channelId || thread.serverId !== serverId) {
       return res.status(404).json({ error: 'Thread not found' });
     }
-    if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (thread.authorId !== req.userId && !hasPermission(permCtx,'manageMessages')) {
       return res.status(403).json({ error: 'Not authorized to edit this thread' });
     }
@@ -429,7 +558,12 @@ router.patch(
 
     const io = req.app.get('io') as import('socket.io').Server | undefined;
     if (archived !== undefined) {
-      io?.to(`channel:${channelId}`).to(`server:${serverId}`).emit('thread-archived', payload);
+      // private channel -> channel room only (viewers are joined there),
+      // never the server-wide room. Public channels keep the server-room copy.
+      const archiveScope = thread.channel?.isPrivate
+        ? io?.to(`channel:${channelId}`)
+        : io?.to(`channel:${channelId}`).to(`server:${serverId}`);
+      archiveScope?.emit('thread-archived', payload);
       io?.to(`thread:${threadId}`).emit('thread-archived', payload);
     } else {
       io?.to(`channel:${channelId}`).emit('thread-updated', payload);
@@ -463,10 +597,16 @@ router.delete(
       }),
       loadPermissionContext(req.userId, serverId),
     ]);
+    // membership first, gate the URL channel, THEN the resource check —
+    // uniform 403 for a non-member and no fast-404 timing split (matches forum.ts).
+    if (!member || !permCtx) return res.status(403).json({ error: 'Not a server member' });
+    const gate = await loadChannelForGate(channelId, serverId);
+    if (!gate) return res.status(404).json({ error: 'Thread not found' });
+    const vis = assertChannelVisible(permCtx, gate.channel, gate.chOverrides, gate.catOverrides);
+    if (!vis.ok) return res.status(404).json({ error: 'Thread not found' });
     if (!thread || thread.channelId !== channelId || thread.serverId !== serverId) {
       return res.status(404).json({ error: 'Thread not found' });
     }
-    if (!member) return res.status(403).json({ error: 'Not a server member' });
     if (thread.authorId !== req.userId && !hasPermission(permCtx,'manageMessages')) {
       return res.status(403).json({ error: 'Not authorized to delete this thread' });
     }
@@ -507,16 +647,35 @@ router.post(
     const threadId = getParam(req, 'threadId');
 
     const [thread, member, permCtx] = await Promise.all([
-      prisma.thread.findUnique({ where: { id: threadId }, select: { id: true, serverId: true, channelId: true, archived: true } }),
+      prisma.thread.findUnique({ where: { id: threadId }, select: { id: true, serverId: true, channelId: true, archived: true, channel: { select: { isPrivate: true } } } }),
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
         include: { serverRole: true },
       }),
       loadPermissionContext(req.userId, serverId),
     ]);
-    if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
-    if (thread.archived) return res.status(400).json({ error: 'Thread is archived' });
+    // membership first, so a non-member gets a uniform 403 rather than
+    // 403-if-the-thread-exists vs 404-if-not.
     if (!member) return res.status(403).json({ error: 'Not a server member' });
+    if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
+    // (write): block posting into a thread in a private channel the member
+    // cannot see. Visibility (404) runs BEFORE the archived 400 so an archived
+    // thread in a private channel does not leak its existence; sendMessagesInThreads
+    // follows. loadChannelForGate resolves the channel fresh (incl. categoryId +
+    // overrides); a null return is a 404, never a fail-open through the optional
+    // thread.channel.
+    {
+      const gateInputs = await loadChannelForGate(thread.channelId, serverId);
+      if (!gateInputs) return res.status(404).json({ error: 'Thread not found' });
+      const vis = assertChannelVisible(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+      if (!vis.ok) return res.status(404).json({ error: 'Thread not found' });
+      // Age gate AFTER the visibility gate: a minor who CAN see this public
+      // age-restricted channel is blocked from posting into its thread (mirrors
+      // messages.ts send-path denyIfAgeGated).
+      const ageDeny = await denyIfAgeGated(gateInputs.channel, req.userId);
+      if (ageDeny) return res.status(403).json(ageDeny);
+    }
+    if (thread.archived) return res.status(400).json({ error: 'Thread is archived' });
     if (!hasPermission(permCtx,'sendMessagesInThreads')) return res.status(403).json({ error: 'Missing sendMessagesInThreads permission' });
 
     const { content, replyToMessageId, attachment } = req.body as {
@@ -606,20 +765,35 @@ router.post(
     // Parse @mentions and create notifications (fire-and-forget, batched resolution)
     const contentStr = (content ?? '').trim();
     if (contentStr && io) {
-      getMentionedUserIds(prisma, contentStr, serverId).then(mentionUserIds => {
-        const ids = mentionUserIds.filter(uid => uid !== req.userId);
+      void (async () => {
+        const mentionUserIds = await getMentionedUserIds(prisma, contentStr, serverId);
+        let ids = mentionUserIds.filter(uid => uid !== req.userId);
+        if (ids.length === 0) return;
+
+        // intersect the mention set with who can VIEW the parent channel,
+        // unless it is provably open. This path has no age filter of its own, so
+        // drop minors for an age-gated channel. Fail closed if the channel is gone.
+        const gate = await loadChannelNotifyGate(thread.channelId);
+        const provablyOpen = gate?.provablyOpen ?? false;
+        if (!provablyOpen) {
+          if (!gate) return;
+          const viewers = await filterUsersWhoCanViewChannel({ gate, candidateUserIds: ids, dropMinors: gate.channel.ageRestricted });
+          ids = ids.filter(uid => viewers.has(uid));
+        }
         if (ids.length === 0) return;
 
         const authorName = author?.username ?? 'Someone';
         const preview = contentStr.length > 200 ? contentStr.slice(0, 200) + '…' : contentStr;
         const notifTitle = `${authorName} mentioned you in a thread`;
 
-        // Emit server-channel-activity for the parent channel
-        io.to(`server:${serverId}`).emit('server-channel-activity', {
+        // Emit server-channel-activity for the parent channel. + route
+        // to the server room only when provably open; otherwise (private OR
+        // baseline/override-restricted) to the channel room (viewers only).
+        io.to(provablyOpen ? `server:${serverId}` : `channel:${thread.channelId}`).emit('server-channel-activity', {
           serverId, channelId: thread.channelId, messageId: msg.id, mentionUserIds: ids,
         });
 
-        prisma.notification.createMany({
+        await prisma.notification.createMany({
           data: ids.map(uid => ({
             userId: uid, serverId, channelId: thread.channelId, threadId,
             type: 'thread_mention', title: notifTitle, body: preview,
@@ -638,7 +812,7 @@ router.post(
             metadata: { messageId: msg.id }, createdAt: new Date().toISOString(),
           });
         }
-      }).catch(() => {});
+      })().catch(() => {});
     }
 
     res.status(201).json(normalized);
@@ -665,10 +839,24 @@ router.get(
       loadPermissionContext(req.userId, serverId),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a server member' });
-    if (!hasPermission(permCtx,'readMessageHistory')) return res.status(403).json({ error: 'Missing readMessageHistory permission' });
 
-    const thread = await prisma.thread.findUnique({ where: { id: threadId }, select: { serverId: true } });
+    const thread = await prisma.thread.findUnique({ where: { id: threadId }, select: { serverId: true, channelId: true } });
     if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
+    // the highest-severity leak in this file — a full, cursor-paginated
+    // private thread transcript. The channel was never resolved (select was
+    // { serverId } only); gate on thread.channelId, replacing the server-level
+    // readMessageHistory check.
+    {
+      const gateInputs = await loadChannelForGate(thread.channelId, serverId);
+      if (!gateInputs) return res.status(404).json({ error: 'Thread not found' });
+      const gate = assertChannelReadable(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+      if (!gate.ok) {
+        if (gate.status === 404) return res.status(404).json({ error: 'Thread not found' });
+        return res.status(gate.status).json({ error: gate.error });
+      }
+      const ageDeny = await denyIfAgeGated(gateInputs.channel, req.userId);
+      if (ageDeny) return res.status(403).json(ageDeny);
+    }
 
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const before = req.query.before as string | undefined;
@@ -738,6 +926,17 @@ router.patch(
     const messageId = getParam(req, 'messageId');
     const { content } = req.body as { content: string };
 
+    // membership first, so a non-member gets a uniform 403 rather than
+    // 403-if-the-thread-exists vs 404-if-not. The thread lookup (needed for the
+    // channel gate — this route has no channelId param) follows the membership check.
+    const [member, permCtx] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      loadPermissionContext(req.userId, serverId),
+    ]);
+    if (!member || !permCtx) return res.status(403).json({ error: 'Not a member of this server' });
+
     // Cross-tenant guard: thread must belong to URL serverId before we touch the message.
     const thread = await prisma.thread.findUnique({
       where: { id: threadId },
@@ -745,11 +944,12 @@ router.patch(
     });
     if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
 
-    // Verify server membership
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
-    if (!member) return res.status(403).json({ error: 'Not a member of this server' });
+    // Gate channel visibility before the message lookup so a non-viewer cannot use
+    // the 404-vs-403 differential as a private-thread existence oracle.
+    const gate = await loadChannelForGate(thread.channelId, serverId);
+    if (!gate) return res.status(404).json({ error: 'Thread not found' });
+    const vis = assertChannelVisible(permCtx, gate.channel, gate.chOverrides, gate.catOverrides);
+    if (!vis.ok) return res.status(404).json({ error: 'Thread not found' });
 
     const msg = await prisma.threadMessage.findUnique({
       where: { id: messageId },
@@ -787,13 +987,6 @@ router.delete(
     const threadId = getParam(req, 'threadId');
     const messageId = getParam(req, 'messageId');
 
-    // Cross-tenant guard: thread must belong to URL serverId before we touch the message.
-    const thread = await prisma.thread.findUnique({
-      where: { id: threadId },
-      select: { serverId: true, channelId: true },
-    });
-    if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
-
     const [msg, member, permCtx] = await Promise.all([
       prisma.threadMessage.findUnique({
         where: { id: messageId },
@@ -805,8 +998,22 @@ router.delete(
       }),
       loadPermissionContext(req.userId, serverId),
     ]);
+    // membership first, so a non-member gets a uniform 403 rather than
+    // 403-if-the-thread-exists vs 404-if-not.
+    if (!member || !permCtx) return res.status(403).json({ error: 'Not a server member' });
+    // Cross-tenant guard: thread must belong to URL serverId before we touch the message.
+    const thread = await prisma.thread.findUnique({
+      where: { id: threadId },
+      select: { serverId: true, channelId: true },
+    });
+    if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
+    // Gate channel visibility before the message existence check so a non-viewer
+    // cannot use the 404-vs-403 differential as an existence oracle.
+    const gate = await loadChannelForGate(thread.channelId, serverId);
+    if (!gate) return res.status(404).json({ error: 'Thread not found' });
+    const vis = assertChannelVisible(permCtx, gate.channel, gate.chOverrides, gate.catOverrides);
+    if (!vis.ok) return res.status(404).json({ error: 'Thread not found' });
     if (!msg || msg.threadId !== threadId) return res.status(404).json({ error: 'Message not found' });
-    if (!member) return res.status(403).json({ error: 'Not a server member' });
 
     if (msg.authorId !== req.userId && !hasPermission(permCtx,'manageMessages')) {
       return res.status(403).json({ error: 'Not authorized to delete this message' });
@@ -837,14 +1044,8 @@ router.post(
     const messageId = getParam(req, 'messageId');
     const { emoji } = req.body as { emoji: string };
 
-    // Cross-tenant guard: thread must belong to URL serverId before we touch the message.
-    const thread = await prisma.thread.findUnique({
-      where: { id: threadId },
-      select: { serverId: true, channelId: true },
-    });
-    if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
-
-    // Verify server membership + addReactions permission
+    // membership first, so a non-member gets a uniform 403 rather than
+    // 403-if-the-thread-exists vs 404-if-not.
     const [member, permCtx] = await Promise.all([
       prisma.serverMember.findUnique({
         where: { userId_serverId: { userId: req.userId, serverId } },
@@ -853,6 +1054,22 @@ router.post(
       loadPermissionContext(req.userId, serverId),
     ]);
     if (!member) return res.status(403).json({ error: 'Not a member of this server' });
+
+    // Cross-tenant guard: thread must belong to URL serverId before we touch the message.
+    const thread = await prisma.thread.findUnique({
+      where: { id: threadId },
+      select: { serverId: true, channelId: true },
+    });
+    if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
+    // (write): block reacting to a message in a thread in a private channel
+    // the member cannot see. Visibility only; addReactions follows. Placed before
+    // the message lookup so the 404 message-existence oracle also closes.
+    {
+      const gateInputs = await loadChannelForGate(thread.channelId, serverId);
+      if (!gateInputs) return res.status(404).json({ error: 'Thread not found' });
+      const vis = assertChannelVisible(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+      if (!vis.ok) return res.status(404).json({ error: 'Thread not found' });
+    }
     if (!hasPermission(permCtx,'addReactions')) return res.status(403).json({ error: 'Missing addReactions permission' });
 
     const msg = await prisma.threadMessage.findUnique({
@@ -888,10 +1105,30 @@ router.delete(
     const emoji = decodeURIComponent(getParam(req, 'emoji'));
 
     // Verify server membership
-    const member = await prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: req.userId, serverId } },
-    });
-    if (!member) return res.status(403).json({ error: 'Not a member of this server' });
+    const [member, permCtx] = await Promise.all([
+      prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId: req.userId, serverId } },
+      }),
+      loadPermissionContext(req.userId, serverId),
+    ]);
+    if (!member || !permCtx) return res.status(403).json({ error: 'Not a member of this server' });
+    // (write): mirror the POST-reaction twin. This handler never resolved the
+    // thread, so a non-viewer could inject a thread-message-reaction-removed event
+    // into a private channel's thread room. Add the cross-tenant guard + the
+    // visibility gate on the thread's real channelId before the emit.
+    {
+      const thread = await prisma.thread.findUnique({ where: { id: threadId }, select: { serverId: true, channelId: true } });
+      if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
+      const gateInputs = await loadChannelForGate(thread.channelId, serverId);
+      if (!gateInputs) return res.status(404).json({ error: 'Thread not found' });
+      const vis = assertChannelVisible(permCtx, gateInputs.channel, gateInputs.chOverrides, gateInputs.catOverrides);
+      if (!vis.ok) return res.status(404).json({ error: 'Thread not found' });
+    }
+
+    // Bind messageId to the gated thread (mirrors the POST twin), so the visibility
+    // gate on threadId is not bypassed by a messageId from another (private) thread.
+    const msg = await prisma.threadMessage.findUnique({ where: { id: messageId }, select: { threadId: true } });
+    if (!msg || msg.threadId !== threadId) return res.status(404).json({ error: 'Message not found' });
 
     await prisma.threadMessageReaction.deleteMany({
       where: { messageId, userId: req.userId, emoji },
@@ -921,15 +1158,28 @@ router.post('/:serverId/threads/:threadId/read', validateUuidParams('serverId', 
   const serverId = getParam(req, 'serverId');
   const threadId = getParam(req, 'threadId');
 
-  const [thread, member] = await Promise.all([
-    prisma.thread.findUnique({ where: { id: threadId }, select: { serverId: true } }),
+  const [thread, member, permCtx] = await Promise.all([
+    prisma.thread.findUnique({ where: { id: threadId }, select: { serverId: true, channelId: true } }),
     prisma.serverMember.findUnique({
       where: { userId_serverId: { userId: req.userId, serverId } },
       select: { userId: true },
     }),
+    loadPermissionContext(req.userId, serverId),
   ]);
+  // membership first (non-member → uniform 403, not 403-if-exists vs 404),
+  // then the thread existence check.
+  if (!member || !permCtx) return res.status(403).json({ error: 'Not a server member' });
   if (!thread || thread.serverId !== serverId) return res.status(404).json({ error: 'Thread not found' });
-  if (!member) return res.status(403).json({ error: 'Not a server member' });
+
+  // mark-read is a READ-shaped op (it records "read up to here"), so gate on
+  // the READABLE predicate, not just visibility — a member with viewChannels but
+  // NOT readMessageHistory must not write a ThreadReadState for a thread they
+  // cannot read. Map the readable-denied outcome to 404 too, so present-unreadable
+  // and absent are indistinguishable (no 204/403-vs-404 existence oracle).
+  const gate = await loadChannelForGate(thread.channelId, serverId);
+  if (!gate) return res.status(404).json({ error: 'Thread not found' });
+  const readable = assertChannelReadable(permCtx, gate.channel, gate.chOverrides, gate.catOverrides);
+  if (!readable.ok) return res.status(404).json({ error: 'Thread not found' });
 
   await prisma.threadReadState.upsert({
     where: { userId_threadId: { userId: req.userId, threadId } },

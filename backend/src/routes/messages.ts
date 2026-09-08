@@ -15,7 +15,7 @@ import { createRateLimitStore, RATE_LIMIT_DEFAULTS } from '../rateLimitStore.js'
 import { enqueueNotification } from '../queues/producers.js';
 import { queuesEnabled } from '../queues/connection.js';
 import { applyBadgePrefs } from '../utils/badges.js';
-import { hasChannelPermission } from '../utils/channelPermissions.js';
+import { hasChannelPermission, assertChannelReadable } from '../utils/channelPermissions.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import { serverNotSuspendedByChannelId } from '../middleware/serverNotSuspended.js';
 import { deleteUploadedFile } from './upload.js';
@@ -25,6 +25,7 @@ import { cappedMapSet } from '../socketHandlers/infrastructure.js';
 import { getClientIp } from '../utils/clientIp.js';
 import { denyIfAgeGated } from '../utils/ageGate.js';
 import { invalidateMessageCount } from '../utils/messageCountCache.js';
+import { loadChannelNotifyGate, filterUsersWhoCanViewChannel } from '../utils/channelVisibility.js';
 
 const log = logger.child({ module: 'messages' });
 
@@ -699,12 +700,10 @@ router.get('/channels/:channelId', validateUuidParams('channelId'), authenticate
           ? prisma.categoryPermissionOverride.findMany({ where: { categoryId: channel.categoryId }, take: 200 })
           : Promise.resolve([]),
       ]);
-      if (channel.isPrivate && !hasChannelPermission(permCtx,'viewChannels', chOverrides, catOverrides, undefined, { requireOverride: true })) {
-        return res.status(404).json({ error: 'Channel not found' });
-      }
-      if (!hasChannelPermission(permCtx,'readMessageHistory', chOverrides, catOverrides)) {
-        return res.status(403).json({ error: 'You do not have permission to read message history in this server.' });
-      }
+      // Reference read gate: the shared helper
+      // is defined so this canonical site and the helper cannot drift.
+      const gate = assertChannelReadable(permCtx, channel, chOverrides, catOverrides);
+      if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
       const ageDeny = await denyIfAgeGated(channel, req.userId);
       if (ageDeny) return res.status(403).json(ageDeny);
     }
@@ -1128,77 +1127,66 @@ router.post('/channels/:channelId', validateUuidParams('channelId'), authenticat
             authorId: req.userId!,
           }).catch(() => {});
         } else {
+          // Inline path (no Redis / no queue). Mirror the worker's scoping:
+          // resolve recipients, intersect with who can VIEW the channel unless it
+          // is provably open, and route the content-free activity ping by
+          // provablyOpen. Fire-and-forget so the response is not blocked.
           const hasEveryone = /@(everyone|here)\b/i.test(contentTrimmed);
-          if (hasEveryone) {
-            io.to(`server:${channel.serverId}`).emit('server-channel-activity', {
+          const authorName = payload.authorUsername ?? 'Someone';
+          const preview = contentTrimmed.length > 200 ? contentTrimmed.slice(0, 200) + '…' : contentTrimmed;
+          const channelName = channel.name ?? 'channel';
+          void (async () => {
+            const gate = await loadChannelNotifyGate(channelId);
+            const provablyOpen = gate?.provablyOpen ?? false;
+
+            let recipients: string[];
+            if (hasEveryone) {
+              const members = await prisma.serverMember.findMany({ where: { serverId: channel.serverId }, select: { userId: true }, take: 5000 });
+              recipients = members.map(m => m.userId).filter(uid => uid !== req.userId);
+            } else {
+              const mentionUserIds = await getMentionedUserIds(prisma, contentTrimmed, channel.serverId);
+              recipients = mentionUserIds.filter((id) => id !== req.userId);
+            }
+
+            if (!provablyOpen) {
+              if (!gate) return; // channel vanished — fail closed, emit nothing
+              const viewers = await filterUsersWhoCanViewChannel({ gate, candidateUserIds: recipients, dropMinors: gate.channel.ageRestricted });
+              recipients = recipients.filter(uid => viewers.has(uid));
+            }
+            if (recipients.length === 0) return;
+
+            const type = hasEveryone ? 'everyone' : 'mention';
+            const notifTitle = hasEveryone
+              ? `${authorName} mentioned @everyone in #${channelName}`
+              : `${authorName} mentioned you in #${channelName}`;
+
+            // + server room only when provably open, else the channel room.
+            io.to(provablyOpen ? `server:${channel.serverId}` : `channel:${channelId}`).emit('server-channel-activity', {
               serverId: channel.serverId,
               channelId,
               messageId: message.id,
-              mentionUserIds: ['@everyone'],
+              mentionUserIds: hasEveryone ? ['@everyone'] : recipients,
             });
 
-            // Inline notification creation (no queue)
-            const authorName = payload.authorUsername ?? 'Someone';
-            const preview = contentTrimmed.length > 200 ? contentTrimmed.slice(0, 200) + '…' : contentTrimmed;
-            prisma.serverMember.findMany({ where: { serverId: channel.serverId }, select: { userId: true }, take: 5000 }).then(members => {
-              const ids = members.map(m => m.userId).filter(uid => uid !== req.userId);
-              if (ids.length === 0) return;
-              const notifTitle = `${authorName} mentioned @everyone in #${channel.name ?? 'channel'}`;
-              prisma.notification.createMany({
-                data: ids.map(uid => ({
-                  userId: uid, serverId: channel.serverId, channelId, type: 'everyone',
-                  title: notifTitle, body: preview,
-                  metadata: { messageId: message.id, authorId: req.userId, authorUsername: authorName, channelName: channel.name ?? 'channel' },
-                })),
-              }).catch(() => {});
-              for (const uid of ids) {
-                prisma.channelReadState.upsert({
-                  where: { userId_channelId: { userId: uid, channelId } },
-                  create: { userId: uid, channelId, mentionCount: 1 },
-                  update: { mentionCount: { increment: 1 } },
-                }).catch(() => {});
-                io.to(`user:${uid}`).emit('notification-created', {
-                  serverId: channel.serverId, channelId, type: 'everyone', title: notifTitle,
-                  body: preview, metadata: { messageId: message.id }, createdAt: new Date().toISOString(),
-                });
-              }
+            await prisma.notification.createMany({
+              data: recipients.map(uid => ({
+                userId: uid, serverId: channel.serverId, channelId, type,
+                title: notifTitle, body: preview,
+                metadata: { messageId: message.id, authorId: req.userId, authorUsername: authorName, channelName },
+              })),
             }).catch(() => {});
-          } else {
-            getMentionedUserIds(prisma, contentTrimmed, channel.serverId).then((mentionUserIds) => {
-              const excludeAuthor = mentionUserIds.filter((id) => id !== req.userId);
-              if (excludeAuthor.length > 0) {
-                io.to(`server:${channel.serverId}`).emit('server-channel-activity', {
-                  serverId: channel.serverId,
-                  channelId,
-                  messageId: message.id,
-                  mentionUserIds: excludeAuthor,
-                });
-
-                // Inline notification creation (no queue)
-                const authorName = payload.authorUsername ?? 'Someone';
-                const preview = contentTrimmed.length > 200 ? contentTrimmed.slice(0, 200) + '…' : contentTrimmed;
-                const notifTitle = `${authorName} mentioned you in #${channel.name ?? 'channel'}`;
-                prisma.notification.createMany({
-                  data: excludeAuthor.map(uid => ({
-                    userId: uid, serverId: channel.serverId, channelId, type: 'mention',
-                    title: notifTitle, body: preview,
-                    metadata: { messageId: message.id, authorId: req.userId, authorUsername: authorName, channelName: channel.name ?? 'channel' },
-                  })),
-                }).catch(() => {});
-                for (const uid of excludeAuthor) {
-                  prisma.channelReadState.upsert({
-                    where: { userId_channelId: { userId: uid, channelId } },
-                    create: { userId: uid, channelId, mentionCount: 1 },
-                    update: { mentionCount: { increment: 1 } },
-                  }).catch(() => {});
-                  io.to(`user:${uid}`).emit('notification-created', {
-                    serverId: channel.serverId, channelId, type: 'mention', title: notifTitle,
-                    body: preview, metadata: { messageId: message.id }, createdAt: new Date().toISOString(),
-                  });
-                }
-              }
-            });
-          }
+            for (const uid of recipients) {
+              prisma.channelReadState.upsert({
+                where: { userId_channelId: { userId: uid, channelId } },
+                create: { userId: uid, channelId, mentionCount: 1 },
+                update: { mentionCount: { increment: 1 } },
+              }).catch(() => {});
+              io.to(`user:${uid}`).emit('notification-created', {
+                serverId: channel.serverId, channelId, type, title: notifTitle,
+                body: preview, metadata: { messageId: message.id }, createdAt: new Date().toISOString(),
+              });
+            }
+          })().catch(() => {});
         }
       }
     }

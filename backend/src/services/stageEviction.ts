@@ -7,6 +7,7 @@ import { removeUserFromAllStreams, clearOwnedStreams } from '../redis.js';
 import { rotateStageLeaderAndKey } from './voiceE2eeRotation.js';
 import { removeLiveKitParticipant } from './livekitAdmin.js';
 import { scheduleGraceEnd } from '../stageGraceTimers.js';
+import { emitStageEventScoped } from '../utils/channelVisibility.js';
 import { logger } from '../logger.js';
 
 const log = logger.child({ module: 'stage-eviction' });
@@ -72,9 +73,11 @@ export async function evictUserFromServerStages(
         await removeFromSet(channelId, 'speakers', userId).catch(() => {});
         io.to(`channel:${channelId}`).emit('stage-speaker-removed', { channelId, userId });
         const updatedSpeakers = await getActiveStageSpeakers(channelId).catch(() => []);
-        io.to(`server:${serverId}`).emit('server-stage-participants', {
+        // Gate ONLY this emit — rotateStageLeaderAndKey below must
+        // still run (fire-and-forget; emitStageEventScoped never throws).
+        void emitStageEventScoped({ io, channelId, serverId, event: 'server-stage-participants', payload: {
           serverId, channelId, participants: updatedSpeakers,
-        });
+        } });
         // Forward secrecy: advance the leader pointer + rotate the SFrame key so
         // the evicted speaker's held key no longer decrypts the session, exactly
         // as stage-leave / moderator-remove / abrupt-disconnect do.

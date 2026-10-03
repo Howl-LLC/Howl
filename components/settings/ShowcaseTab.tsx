@@ -1075,7 +1075,7 @@ export const ShowcaseTab: React.FC<ShowcaseTabProps> = ({ userId }) => {
               {', '}
               <a href="https://marvelrivalsapi.com" target="_blank" rel="noopener noreferrer" className="underline">MarvelRivalsAPI</a>
               {', '}
-              <a href="https://r6data.com" target="_blank" rel="noopener noreferrer" className="underline">R6Data</a>
+              <a href="https://r6.arenyze.com" target="_blank" rel="noopener noreferrer" className="underline">Arenyze</a>
             </p>
           </div>
         </SettingsSection>

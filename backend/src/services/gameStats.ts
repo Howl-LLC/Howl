@@ -601,10 +601,12 @@ async function fetchMarvelRivalsStats(username: string): Promise<FetchResult> {
   };
 }
 
-// RAINBOW SIX SIEGE (r6data.com)
+// RAINBOW SIX SIEGE (Arenyze — public-api.arenyze.com, formerly r6data.com)
 
 /** R6 Siege season info: season_id → { code, name, start } */
 const R6_SEASON_INFO: Record<number, { code: string; name: string; start: string }> = {
+  43: { code: 'Y11S3', name: 'Split Fire', start: '2026-09-02' },
+  42: { code: 'Y11S2', name: 'Operation System Override', start: '2026-06-02' },
   41: { code: 'Y11S1', name: 'Silent Hunt', start: '2026-03-03' },
   40: { code: 'Y10S4', name: 'Tenfold Pursuit', start: '2025-12-02' },
   39: { code: 'Y10S3', name: 'High Stakes', start: '2025-09-02' },
@@ -652,11 +654,12 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
   if (!R6_API_KEY) return { rank: null, stats: null, error: 'R6_API_KEY not configured' };
 
   const r6Platform = platform === 'psn' ? 'psn' : platform === 'xbox' ? 'xbl' : 'uplay';
-  const platformFamily = (platform === 'psn' || platform === 'xbox') ? 'console' : 'pc';
 
-  // Single API call — type=stats returns rank + stats + per-season data
+  // Single v2 /profile call — bundles ranked stats, season segments and
+  // rank-points history, replacing the two removed v1 calls (type=stats +
+  // type=seasonalStats) that now return 410 after r6data.com became Arenyze.
   const res = await safeFetch(
-    `https://api.r6data.com/api/stats?type=stats&nameOnPlatform=${encodeURIComponent(username)}&platformType=${r6Platform}&platform_families=${platformFamily}`, {
+    `https://public-api.arenyze.com/r6/api/v2/profile?nameOnPlatform=${encodeURIComponent(username)}&platformType=${r6Platform}`, {
       headers: { 'api-key': R6_API_KEY },
     }
   );
@@ -664,29 +667,50 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
   if (!res?.ok) return errorResult(res, 'R6');
 
   const data = await res.json() as {
-    platform_families_full_profiles?: Array<{
-      board_ids_full_profiles?: Array<{
-        board_id?: string;
-        full_profiles?: Array<{
-          season_id: number;
-          profile: {
-            rank: number;
-            rank_points: number;
-            max_rank: number;
-            max_rank_points: number;
-            kills: number;
-            deaths: number;
-            wins: number;
-            losses: number;
-            abandon?: number;
-          };
+    stats?: {
+      platform_families_full_profiles?: Array<{
+        board_ids_full_profiles?: Array<{
+          board_id?: string;
+          full_profiles?: Array<{
+            season_id: number;
+            profile: {
+              rank: number;
+              rank_points: number;
+              max_rank: number;
+              max_rank_points: number;
+              kills: number;
+              deaths: number;
+              wins: number;
+              losses: number;
+              abandon?: number;
+            };
+          }>;
         }>;
       }>;
-    }>;
+    };
+    seasons?: {
+      data?: {
+        segments?: Array<{
+          type?: string;
+          metadata?: { shortName?: string; seasonName?: string; color?: string };
+          attributes?: { season?: number };
+        }>;
+      };
+    };
+    history?: {
+      data?: {
+        history?: {
+          data?: Array<[string, {
+            value?: number;
+            metadata?: { rank?: string; color?: string; imageUrl?: string };
+          }]>;
+        };
+      };
+    };
   };
 
-  // Navigate to ranked board
-  const rankedBoard = data.platform_families_full_profiles?.[0]
+  // Navigate to ranked board (v2 nests the profiles under `stats`).
+  const rankedBoard = data.stats?.platform_families_full_profiles?.[0]
     ?.board_ids_full_profiles?.find(b => b.board_id === 'ranked');
 
   if (!rankedBoard?.full_profiles?.length) {
@@ -698,7 +722,11 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
   const current = seasons[0];
   const p = current.profile;
 
-  // Map rank number to name
+  // Numeric rank → name/image maps. v2 returns the authoritative rank name,
+  // color and image in the rank-points history metadata; these maps are only a
+  // fallback for the rare ranked player who has no history entries yet. (The
+  // numeric scale is unreliable above Diamond — e.g. Champion reports as 40 —
+  // so we never prefer it over the API-provided name.)
   const R6_RANK_NAMES: Record<number, string> = {
     0: 'Unranked',
     1: 'Copper V', 2: 'Copper IV', 3: 'Copper III', 4: 'Copper II', 5: 'Copper I',
@@ -711,7 +739,7 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
     36: 'Champion',
   };
 
-  // Static rank image URLs from r6data.com — fallback when seasonalStats doesn't return an image
+  // Static rank image slugs — fallback when history doesn't carry an image.
   const R6_RANK_IMAGES: Record<number, string> = {
     1: 'copper-5', 2: 'copper-4', 3: 'copper-3', 4: 'copper-2', 5: 'copper-1',
     6: 'bronze-5', 7: 'bronze-4', 8: 'bronze-3', 9: 'bronze-2', 10: 'bronze-1',
@@ -723,17 +751,15 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
     36: 'champion',
   };
 
-  const rankName = R6_RANK_NAMES[p.rank] ?? `Rank ${p.rank}`;
-  const peakRankName = R6_RANK_NAMES[p.max_rank] ?? `Rank ${p.max_rank}`;
-
   const kills = p.kills ?? 0;
   const deaths = p.deaths ?? 1;
   const wins = p.wins ?? 0;
   const losses = p.losses ?? 0;
   const matches = wins + losses;
 
-  // Fetch rank image AND historical season data from seasonalStats endpoint
-  let rankImageUrl: string | null = null;
+  // Parse rank-points history (bundled in /profile under history.data.history).
+  // Entry shape is unchanged from the old seasonalStats endpoint:
+  // [timestamp, { value, metadata: { rank, color, imageUrl } }].
   const seasonalHistory: Array<{
     timestamp: string;
     rankName: string | null;
@@ -742,51 +768,53 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
     rankPoints: number | null;
   }> = [];
 
-  if (p.rank > 0) {
-    const seasonalRes = await safeFetch(
-      `https://api.r6data.com/api/stats?type=seasonalStats&nameOnPlatform=${encodeURIComponent(username)}&platformType=${r6Platform}`, {
-        headers: { 'api-key': R6_API_KEY },
-      }
-    );
-    if (seasonalRes?.ok) {
-      const seasonalData = await seasonalRes.json() as {
-        data?: {
-          history?: {
-            data?: Array<[string, {
-              metadata?: { rank?: string; imageUrl?: string; color?: string };
-              value?: number;
-            }]>;
-          };
-        };
-      };
-      const historyEntries = seasonalData.data?.history?.data;
-      if (historyEntries && Array.isArray(historyEntries)) {
-        for (const [timestamp, entry] of historyEntries) {
-          seasonalHistory.push({
-            timestamp,
-            rankName: entry.metadata?.rank ? truncate(entry.metadata.rank, 32) : null,
-            imageUrl: entry.metadata?.imageUrl?.slice(0, 512) ?? null,
-            color: entry.metadata?.color?.slice(0, 16) ?? null,
-            rankPoints: typeof entry.value === 'number' ? Math.round(entry.value) : null,
-          });
-        }
-        // Get rank image from the latest entry
-        if (seasonalHistory.length > 0 && seasonalHistory[0].imageUrl) {
-          rankImageUrl = seasonalHistory[0].imageUrl;
-        }
-      }
+  const historyEntries = data.history?.data?.history?.data;
+  if (historyEntries && Array.isArray(historyEntries)) {
+    for (const [timestamp, entry] of historyEntries) {
+      seasonalHistory.push({
+        timestamp,
+        rankName: entry.metadata?.rank ? truncate(entry.metadata.rank, 32) : null,
+        imageUrl: entry.metadata?.imageUrl?.slice(0, 512) ?? null,
+        color: entry.metadata?.color?.slice(0, 16) ?? null,
+        rankPoints: typeof entry.value === 'number' ? Math.round(entry.value) : null,
+      });
     }
+    // Newest first so [0] is the current standing (don't trust API order).
+    seasonalHistory.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
   }
 
-  // Static fallback if seasonalStats didn't return an image
+  const latest = seasonalHistory[0] ?? null;
+
+  // Current rank: prefer the authoritative v2 history metadata; fall back to maps.
+  const rankName = latest?.rankName ?? R6_RANK_NAMES[p.rank] ?? `Rank ${p.rank}`;
+  const rankColor = latest?.color ?? null;
+  let rankImageUrl: string | null = latest?.imageUrl ?? null;
   if (!rankImageUrl && p.rank > 0) {
     const slug = R6_RANK_IMAGES[p.rank];
     if (slug) {
-      rankImageUrl = `https://r6data.com/assets/img/r6_ranks_img/${slug}.webp`;
+      rankImageUrl = `https://r6.arenyze.com/assets/img/r6_ranks_img/${slug}.webp`;
     }
   }
 
-  // Build season data
+  // Peak rank name: the history entry with the highest RP carries the correct
+  // tier name for max_rank_points (the numeric map is wrong at the top end).
+  let peakRankName = R6_RANK_NAMES[p.max_rank] ?? `Rank ${p.max_rank}`;
+  if (seasonalHistory.length) {
+    const peakEntry = seasonalHistory.reduce((best, e) =>
+      (e.rankPoints ?? 0) > (best.rankPoints ?? 0) ? e : best);
+    if (peakEntry.rankName) peakRankName = peakEntry.rankName;
+  }
+
+  // Current season code/name: prefer the v2 season segment, fall back to the
+  // static table, then a generic label.
+  const currentSegment = data.seasons?.data?.segments?.find(
+    s => s.type === 'season' && s.attributes?.season === current.season_id
+  );
+  const staticInfo = R6_SEASON_INFO[current.season_id];
+  const seasonCode = currentSegment?.metadata?.shortName ?? staticInfo?.code ?? `S${current.season_id}`;
+  const seasonFullName = currentSegment?.metadata?.seasonName ?? staticInfo?.name ?? null;
+
+  // Build season data (historical seasons are merged from cache by the caller).
   const seasonData: Array<{
     seasonId: number;
     seasonName: string;
@@ -805,20 +833,18 @@ async function fetchR6SiegeStats(username: string, platform: string | null): Pro
     losses: number;
   }> = [];
 
-  // Current season from full_profiles (already fetched above)
-  const currentInfo = R6_SEASON_INFO[current.season_id];
   seasonData.push({
     seasonId: current.season_id,
-    seasonName: currentInfo?.code ?? `S${current.season_id}`,
-    seasonFullName: currentInfo?.name ?? null,
+    seasonName: seasonCode,
+    seasonFullName,
     rank: p.rank,
     rankName,
     rankPoints: p.rank_points,
     maxRank: p.max_rank,
-    maxRankName: R6_RANK_NAMES[p.max_rank] ?? '',
+    maxRankName: peakRankName,
     maxRankPoints: p.max_rank_points,
     imageUrl: rankImageUrl,
-    color: null,
+    color: rankColor,
     kills,
     deaths,
     wins,

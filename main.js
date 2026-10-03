@@ -1760,7 +1760,7 @@ function startSsoCleanupIfNeeded() {
 }
 
 const SSO_PROVIDERS = ['google', 'apple', 'steam'];
-const APP_PROVIDERS = ['spotify', 'riot', 'epic', 'twitch', 'youtube', 'github', 'reddit'];
+const APP_PROVIDERS = ['spotify', 'riot', 'twitch', 'youtube', 'github', 'reddit'];
 
 function generateNonce() {
   const nonce = crypto.randomBytes(16).toString('hex');

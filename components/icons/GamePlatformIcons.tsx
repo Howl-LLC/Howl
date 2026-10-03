@@ -120,6 +120,7 @@ export const PLATFORM_ICON_MAP: Record<string, React.FC<{ size?: number; classNa
   steam: SteamIcon,
   riot: RiotIcon,
   epic: EpicIcon,
+  fortnite: FortniteIcon,
   apex: ApexIcon,
   marvel_rivals: MarvelRivalsIcon,
   r6_siege: R6Icon,

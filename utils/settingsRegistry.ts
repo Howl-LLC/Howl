@@ -686,16 +686,6 @@ export const SETTINGS_REGISTRY: SettingEntry[] = [
     keywords: ['riot', 'league', 'valorant', 'link', 'game', 'integration'],
   },
   {
-    id: 'link-epic-games',
-    tab: 'authorized-apps',
-    labelKey: 'settings.linkedApps.linkEpicGames',
-    label: 'Link Epic Games',
-    descriptionKey: 'settings.linkedApps.linkEpicGames',
-    description: 'Connect your Epic Games account (Fortnite)',
-    type: 'button',
-    keywords: ['epic', 'fortnite', 'link', 'game', 'integration'],
-  },
-  {
     id: 'link-steam-games',
     tab: 'authorized-apps',
     labelKey: 'settings.linkedApps.linkSteamGames',
@@ -711,9 +701,9 @@ export const SETTINGS_REGISTRY: SettingEntry[] = [
     labelKey: 'settings.linkedApps.linkUsernameGame',
     label: 'Link Username-Based Game',
     descriptionKey: 'settings.linkedApps.linkUsernameGame',
-    description: 'Link a game by username (Apex Legends, Marvel Rivals, R6 Siege)',
+    description: 'Link a game by username (Apex Legends, Marvel Rivals, R6 Siege, Fortnite)',
     type: 'text-input',
-    keywords: ['apex', 'marvel', 'siege', 'username', 'game', 'link', 'platform'],
+    keywords: ['apex', 'marvel', 'siege', 'fortnite', 'username', 'game', 'link', 'platform'],
   },
   {
     id: 'refresh-linked-profile',

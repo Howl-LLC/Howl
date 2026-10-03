@@ -84,7 +84,6 @@ declare module './core' {
 
     // OAuth connect tokens
     getRiotConnectToken(): Promise<{ connectToken: string }>;
-    getEpicConnectToken(): Promise<{ connectToken: string }>;
     getTwitchConnectToken(): Promise<{ connectToken: string }>;
     getYouTubeConnectToken(): Promise<{ connectToken: string }>;
     getGitHubConnectToken(): Promise<{ connectToken: string }>;
@@ -137,9 +136,6 @@ APIClient.prototype.getRiotConnectToken = async function(this: APIClient) {
   return this.request<{ connectToken: string }>('/connected-apps/riot/connect-token', { method: 'POST' });
 };
 
-APIClient.prototype.getEpicConnectToken = async function(this: APIClient) {
-  return this.request<{ connectToken: string }>('/connected-apps/epic/connect-token', { method: 'POST' });
-};
 
 APIClient.prototype.getTwitchConnectToken = async function(this: APIClient) {
   return this.request<{ connectToken: string }>('/connected-apps/twitch/connect-token', { method: 'POST' });

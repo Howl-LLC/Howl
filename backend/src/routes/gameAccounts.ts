@@ -128,8 +128,8 @@ router.post('/', authenticateToken, gameAccountLimiter, validate(linkGameAccount
   if (!provider) return res.status(400).json({ error: 'Unsupported game' });
 
   // OAuth-linked providers must be connected through their respective OAuth flows, not here
-  if (['steam', 'riot', 'epic'].includes(provider)) {
-    return res.status(400).json({ error: `${game} requires OAuth connection. Use the Linked Apps settings to connect your ${provider === 'steam' ? 'Steam' : provider === 'riot' ? 'Riot Games' : 'Epic Games'} account first.` });
+  if (['steam', 'riot'].includes(provider)) {
+    return res.status(400).json({ error: `${game} requires OAuth connection. Use the Linked Apps settings to connect your ${provider === 'steam' ? 'Steam' : 'Riot Games'} account first.` });
   }
 
   // Check for existing account for this game

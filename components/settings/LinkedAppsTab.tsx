@@ -8,7 +8,7 @@ import type { GameAccountData } from '../../services/api/gameAccounts';
 import { getBackendOrigin } from '../../config';
 import { Toggle } from './SettingsWidgets';
 import { APP_ICON_MAP } from '../icons/AppIcons';
-import { SteamIcon, RiotIcon, EpicIcon, PLATFORM_ICON_MAP } from '../icons/GamePlatformIcons';
+import { SteamIcon, RiotIcon, PLATFORM_ICON_MAP } from '../icons/GamePlatformIcons';
 import { Dropdown } from '../ui/dropdown';
 
 
@@ -146,7 +146,7 @@ export const LinkedAppsTab: React.FC = () => {
       apiClient.getConnectedApps().then(setConnectedApps).catch(() => {}).finally(() => setLoading(false));
     }
     if (appConnected) {
-      // Riot/Epic OAuth callback — refresh both connected apps and game accounts
+      // Riot OAuth callback — refresh both connected apps and game accounts
       setLoading(true);
       Promise.all([
         apiClient.getConnectedApps().then(setConnectedApps),
@@ -157,7 +157,6 @@ export const LinkedAppsTab: React.FC = () => {
       const errorMessages: Record<string, string> = {
         spotify_denied: t('settings.linkedApps.spotifyDenied', { defaultValue: 'Spotify link was denied.' }),
         riot_denied: t('settings.linkedApps.riotDenied', { defaultValue: 'Riot Games link was denied.' }),
-        epic_denied: t('settings.linkedApps.epicDenied', { defaultValue: 'Epic Games link was denied.' }),
         twitch_denied: t('settings.linkedApps.twitchDenied', { defaultValue: 'Twitch link was denied.' }),
         youtube_denied: t('settings.linkedApps.youtubeDenied', { defaultValue: 'YouTube link was denied.' }),
         github_denied: t('settings.linkedApps.githubDenied', { defaultValue: 'GitHub link was denied.' }),
@@ -224,8 +223,7 @@ export const LinkedAppsTab: React.FC = () => {
         const errorMessages: Record<string, string> = {
           spotify_denied: t('settings.linkedApps.spotifyDenied', { defaultValue: 'Spotify link was denied.' }),
           riot_denied: t('settings.linkedApps.riotDenied', { defaultValue: 'Riot Games link was denied.' }),
-          epic_denied: t('settings.linkedApps.epicDenied', { defaultValue: 'Epic Games link was denied.' }),
-          twitch_denied: t('settings.linkedApps.twitchDenied', { defaultValue: 'Twitch link was denied.' }),
+            twitch_denied: t('settings.linkedApps.twitchDenied', { defaultValue: 'Twitch link was denied.' }),
           youtube_denied: t('settings.linkedApps.youtubeDenied', { defaultValue: 'YouTube link was denied.' }),
           github_denied: t('settings.linkedApps.githubDenied', { defaultValue: 'GitHub link was denied.' }),
           reddit_denied: t('settings.linkedApps.redditDenied', { defaultValue: 'Reddit link was denied.' }),
@@ -321,7 +319,6 @@ export const LinkedAppsTab: React.FC = () => {
       const tokenGetters: Record<string, () => Promise<{ connectToken: string }>> = {
         spotify: () => apiClient.getSpotifyConnectToken(),
         riot: () => apiClient.getRiotConnectToken(),
-        epic: () => apiClient.getEpicConnectToken(),
         twitch: () => apiClient.getTwitchConnectToken(),
         youtube: () => apiClient.getYouTubeConnectToken(),
         github: () => apiClient.getGitHubConnectToken(),
@@ -366,7 +363,7 @@ export const LinkedAppsTab: React.FC = () => {
       await apiClient.disconnectApp(accountId);
       setConnectedApps((prev) => prev.filter((a) => a.id !== accountId));
       setExpandedApp(null);
-      refreshGameAccounts(); // Riot/Epic disconnect removes game accounts
+      refreshGameAccounts(); // Riot disconnect removes game accounts
     } catch { /* ignore */ }
     setUnlinking(null);
   }, [refreshGameAccounts]);
@@ -865,59 +862,6 @@ export const LinkedAppsTab: React.FC = () => {
           );
         })()}
 
-        {/* ── Epic Games (OAuth — Fortnite) ── */}
-        {(() => {
-          const epicApp = connectedAppMap.get('epic');
-          const epicLinked = !!epicApp;
-          const fortnite = gameAccountMap.get('fortnite');
-          return (
-            <div id="setting-link-epic-games" className="rounded-2xl border p-5 transition-colors bg-panel" style={{ borderColor: epicLinked ? 'rgba(16,185,129,0.25)' : 'var(--border-subtle)' }}>
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-full shrink-0 overflow-hidden flex items-center justify-center" style={{ backgroundColor: '#2F2F2F' }}>
-                  <EpicIcon size={20} className="text-white" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold truncate text-t-primary">
-                      {epicApp?.displayName || t('linkedApps.epicGames', { defaultValue: 'Epic Games' })}
-                    </span>
-                    {epicLinked && (
-                      <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10b981' }}>
-                        <Shield size={8} className="inline -mt-px mr-0.5" />{t('linkedApps.verified', { defaultValue: 'Verified' })}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] mt-0.5 text-t-secondary">
-                    {epicLinked ? t('linkedApps.coversEpic', { defaultValue: 'Covers: Fortnite' }) : t('linkedApps.linkToAddEpic', { defaultValue: 'Link to add Fortnite' })}
-                  </p>
-                </div>
-                {epicLinked ? (
-                  <button type="button" onClick={() => handleDisconnectApp(epicApp!.id)} disabled={unlinking === epicApp!.id}
-                    className="shrink-0 p-2 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 hover:border-red-500/40 transition-all disabled:opacity-50"
-                    title={t('linkedApps.unlink', { defaultValue: 'Unlink' })}>
-                    {unlinking === epicApp!.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
-                  </button>
-                ) : (
-                  <button type="button" onClick={() => handleConnectApp('epic')} disabled={connecting === 'epic'}
-                    className="btn-cta shrink-0 text-[10px] font-semibold px-4 py-1.5 rounded-xl transition-all">
-                    {connecting === 'epic' ? t('settings.linkedApps.linking', { defaultValue: 'Linking...' }) : t('settings.linkedApps.link', { defaultValue: 'Link' })}
-                  </button>
-                )}
-              </div>
-              {fortnite && (
-                <div className="flex gap-2 mt-3 ml-14">
-                  <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--fill-hover)' }}>
-                    FORTNITE{fortnite.rank ? ` · ${fortnite.rank.tier}` : ''}
-                  </span>
-                </div>
-              )}
-              <p className="text-[8px] mt-2 ml-14" style={{ color: 'var(--text-secondary)' }}>
-                Fortnite data by <a href="https://fortnite-api.com" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--text-secondary)' }}>Fortnite-API.com</a>
-              </p>
-            </div>
-          );
-        })()}
-
         {/* ── Steam Game Linking (from SSO) ── */}
         {(() => {
           const steamGames = ['cs2', 'dota2'].filter(g => gameAccountMap.has(g));
@@ -986,16 +930,17 @@ export const LinkedAppsTab: React.FC = () => {
           );
         })()}
 
-        {/* ── Username-Entry Games (Apex, Marvel Rivals, R6 Siege) ── */}
+        {/* ── Username-Entry Games (Apex, Marvel Rivals, R6 Siege, Fortnite) ── */}
         {([
           { game: 'apex', label: 'Apex Legends', color: '#CD3333', hasPlatform: true },
           { game: 'marvel_rivals', label: 'Marvel Rivals', color: '#E63946', hasPlatform: false },
           { game: 'r6_siege', label: 'Rainbow Six Siege', color: '#2E6EA6', hasPlatform: true },
+          { game: 'fortnite', label: 'Fortnite', color: '#2D8CFF', hasPlatform: false },
         ] as const).map(({ game, label, color, hasPlatform }) => {
           const ga = gameAccountMap.get(game);
           const isFormOpen = gameForm?.game === game;
           return (
-            <div key={game} id={`setting-${game === 'apex' ? 'link-username-game' : game === 'marvel_rivals' ? 'link-marvel-rivals' : 'link-r6-siege'}`} className="rounded-2xl border p-5 transition-colors bg-panel" style={{ borderColor: ga ? 'rgba(16,185,129,0.25)' : 'var(--border-subtle)' }}>
+            <div key={game} id={`setting-${game === 'apex' ? 'link-username-game' : game === 'marvel_rivals' ? 'link-marvel-rivals' : game === 'fortnite' ? 'link-fortnite' : 'link-r6-siege'}`} className="rounded-2xl border p-5 transition-colors bg-panel" style={{ borderColor: ga ? 'rgba(16,185,129,0.25)' : 'var(--border-subtle)' }}>
               <div className="flex items-center gap-3.5">
                 <div className="w-11 h-11 rounded-full shrink-0 overflow-hidden flex items-center justify-center" style={{ backgroundColor: color }}>
                   {(() => { const I = PLATFORM_ICON_MAP[game]; return I ? <I size={20} className="text-white" /> : <Gamepad2 size={20} className="text-white" />; })()}
@@ -1078,8 +1023,8 @@ export const LinkedAppsTab: React.FC = () => {
               )}
               <p className="text-[8px] mt-2 ml-14" style={{ color: 'var(--text-secondary)' }}>
                 Data {game === 'apex' ? 'provided' : 'by'}{' '}
-                <a href={game === 'apex' ? 'https://apexlegendsstatus.com' : game === 'marvel_rivals' ? 'https://marvelrivalsapi.com' : 'https://r6data.com'} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--text-secondary)' }}>
-                  {game === 'apex' ? 'Apex Legends Status' : game === 'marvel_rivals' ? 'MarvelRivalsAPI' : 'R6Data'}
+                <a href={game === 'apex' ? 'https://apexlegendsstatus.com' : game === 'marvel_rivals' ? 'https://marvelrivalsapi.com' : game === 'fortnite' ? 'https://fortnite-api.com' : 'https://r6.arenyze.com'} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--text-secondary)' }}>
+                  {game === 'apex' ? 'Apex Legends Status' : game === 'marvel_rivals' ? 'MarvelRivalsAPI' : game === 'fortnite' ? 'Fortnite-API.com' : 'Arenyze'}
                 </a>
               </p>
             </div>

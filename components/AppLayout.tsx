@@ -747,7 +747,12 @@ export function AppLayout(props: AppLayoutProps) {
       const now = Date.now();
       if (now - lastShownAt < 5000) return;
       lastShownAt = now;
-      showGlobalToast(`You're being rate limited. Please wait ~${retryAfter}s.`, 'warning');
+      const wait = retryAfter >= 3600
+        ? `~${Math.round(retryAfter / 3600)}h`
+        : retryAfter >= 90
+          ? `~${Math.round(retryAfter / 60)}m`
+          : `~${retryAfter}s`;
+      showGlobalToast(`You're being rate limited. Please wait ${wait}.`, 'warning');
     });
     return () => apiClient.setRateLimitHandler(null);
   }, [showGlobalToast]);

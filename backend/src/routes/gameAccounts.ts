@@ -270,12 +270,14 @@ router.post('/:id/refresh', validateUuidParams('id'), authenticateToken, gameAcc
 
     // Cooldown selection:
     //   - transient outage on the provider side → 1h since last attempt (don't hammer them)
-    //   - normal error within retry budget → 30s since last attempt (fast loop for fixable issues)
-    //   - everything else → plan cooldown (1h Pro / 6h Essential / 24h Free)
-    //     anchored to the last MANUAL refresh, not lastFetched — the showcase
-    //     worker bumps lastFetched on every auto-refresh, which used to keep
-    //     free users (24h manual cooldown = 24h auto interval) permanently
-    //     on cooldown.
+    //   - any other error (expired/bad key, 404, 400 — user-fixable) → 30s since last
+    //     attempt, REGARDLESS of retry count. Exhausted retries only back off the
+    //     automatic worker; a manual click means the user may have just fixed the
+    //     problem, so never trap them in the hour-long plan cooldown over a bad key.
+    //   - success → plan cooldown (1h Pro / 6h Essential / 24h Free) anchored to the
+    //     last MANUAL refresh, not lastFetched — the showcase worker bumps lastFetched
+    //     on every auto-refresh, which used to keep free users (24h manual cooldown =
+    //     24h auto interval) permanently on cooldown.
     const hasError = !!account.statsCache.fetchError;
     const retryCount = account.statsCache.errorRetryCount ?? 0;
     const isTransient = !!account.statsCache.errorTransient;
@@ -286,7 +288,7 @@ router.post('/:id/refresh', validateUuidParams('id'), authenticateToken, gameAcc
       anchor = account.statsCache.lastFetched;
       effectiveCooldownMs = 60 * 60 * 1000;
       cooldownReason = 'transient';
-    } else if (hasError && retryCount < 5) {
+    } else if (hasError) {
       anchor = account.statsCache.lastFetched;
       effectiveCooldownMs = 30_000;
       cooldownReason = 'fast-retry';
@@ -298,6 +300,8 @@ router.post('/:id/refresh', validateUuidParams('id'), authenticateToken, gameAcc
 
     if (anchor && Date.now() - anchor.getTime() < effectiveCooldownMs) {
       const nextAvailable = new Date(anchor.getTime() + effectiveCooldownMs);
+      // Tell the client the real wait so its 429 toast isn't a misleading default.
+      res.set('Retry-After', String(Math.max(1, Math.ceil((nextAvailable.getTime() - Date.now()) / 1000))));
       return res.status(429).json({
         error: cooldownReason === 'transient'
           ? 'Provider is having issues, retry in ~1h'

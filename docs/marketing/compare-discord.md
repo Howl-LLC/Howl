@@ -35,7 +35,7 @@ Self-hosting is a Docker Compose file that brings up the full stack with automat
 
 There's no advertising and no rewards economy. Revenue is subscriptions and donations.
 
-Feature-wise, it's the shape you'd expect from a Discord-style platform. Servers with channels and roles, threads, forums, polls, events, stages, screen share, and activity status for Spotify, Steam, Twitch, YouTube, Riot, and Epic. Desktop apps via Electron, and a Stream Deck plugin.
+Feature-wise, it's the shape you'd expect from a Discord-style platform. Servers with channels and roles, threads, forums, polls, events, stages, screen share, and activity status for Spotify, Steam, Twitch, YouTube, and Riot. Desktop apps via Electron, and a Stream Deck plugin.
 
 ## Importing from Discord
 

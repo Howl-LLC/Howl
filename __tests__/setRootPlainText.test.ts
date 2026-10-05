@@ -41,6 +41,18 @@ describe('$setRootPlainText', () => {
     expect(roundTrip('\na\n').out).toBe('\na\n');
   });
 
+  it('works as an initial editorState callback (edit-message flow)', () => {
+    // LexicalEditEditor seeds the editor via initialConfig.editorState; the
+    // text read back on save must equal the original message.
+    const original = 'first line\n\nthird line';
+    // LexicalComposer applies a function editorState via editor.update(fn, { tag: 'history-merge' }).
+    const editor = createEditor({ onError: (e) => { throw e; } });
+    editor.update(() => { $setRootPlainText(original); }, { tag: 'history-merge', discrete: true });
+    let out = '';
+    editor.read(() => { out = $getRoot().getTextContent(); });
+    expect(out).toBe(original);
+  });
+
   it('handles text with no newline and empty text', () => {
     expect(roundTrip('hello').out).toBe('hello');
     expect(roundTrip('').out).toBe('');

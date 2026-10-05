@@ -9,12 +9,11 @@ import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $getRoot,
-  $createParagraphNode,
-  $createTextNode,
   COMMAND_PRIORITY_HIGH,
   KEY_DOWN_COMMAND,
   type LexicalEditor,
 } from 'lexical';
+import { $setRootPlainText } from './lexical/setRootPlainText';
 import { MentionPillNode } from './lexical/MentionPillNode';
 import { ChannelLinkNode } from './lexical/ChannelLinkNode';
 import { CustomEmojiNode } from './lexical/CustomEmojiNode';
@@ -128,13 +127,9 @@ export const LexicalEditEditor = forwardRef<LexicalEditEditorHandle, LexicalEdit
       console.error('Lexical edit error:', error);
     },
     editorState: () => {
-      const root = $getRoot();
-      const lines = initialValue.split('\n');
-      for (const line of lines) {
-        const p = $createParagraphNode();
-        if (line) p.append($createTextNode(line));
-        root.append(p);
-      }
+      // Single paragraph with LineBreakNodes — one ParagraphNode per line would
+      // make getTextContent() emit "\n\n" per newline and double them on save.
+      $setRootPlainText(initialValue);
     },
   }).current;
 

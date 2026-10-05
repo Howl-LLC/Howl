@@ -31,6 +31,7 @@ import {
   type ParagraphNode,
 } from 'lexical';
 import { parseInlineMarkdown, type InlineMarkdownSegment } from '../utils/markdownUtils';
+import { $setRootPlainText } from './lexical/setRootPlainText';
 import { MentionPillNode, $createMentionPillNode, type MentionPillData } from './lexical/MentionPillNode';
 import { ChannelLinkNode, $createChannelLinkNode, type ChannelLinkData } from './lexical/ChannelLinkNode';
 import { CustomEmojiNode, $createCustomEmojiNode, type CustomEmojiData } from './lexical/CustomEmojiNode';
@@ -1322,17 +1323,9 @@ export const LexicalChatEditor = forwardRef<LexicalChatEditorHandle, LexicalChat
     },
     setTextContent: (text: string) => {
       editorInstanceRef.current?.update(() => {
-        const root = $getRoot();
-        root.clear();
-        const lines = text.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          const para = $createParagraphNode();
-          if (lines[i]) para.append($createTextNode(lines[i]));
-          root.append(para);
-        }
+        const para = $setRootPlainText(text);
         // Position cursor at the end
-        const lastPara = root.getLastChild();
-        if (lastPara) lastPara.selectEnd();
+        para.selectEnd();
       }, { tag: 'history-merge' });
     },
     insertMentionText: (mentionText: string, searchStartPos: number) => {
@@ -1375,35 +1368,24 @@ export const LexicalChatEditor = forwardRef<LexicalChatEditorHandle, LexicalChat
         const after = fullText.slice(absCursor);
         const newText = before + mentionText + ' ' + after;
 
-        // Replace entire content
-        root.clear();
-        const lines = newText.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          const para = $createParagraphNode();
-          if (lines[i]) para.append($createTextNode(lines[i]));
-          root.append(para);
-        }
+        // Replace entire content (single paragraph, LineBreakNodes between lines)
+        const para = $setRootPlainText(newText);
 
-        // Position cursor after the inserted mention + space
+        // Position cursor after the inserted mention + space.
+        // Children are TextNodes and LineBreakNodes (size 1), so summing
+        // getTextContentSize() walks absolute positions exactly.
         const targetPos = searchStartPos + mentionText.length + 1;
         let pos = 0;
-        const newParagraphs = root.getChildren() as ParagraphNode[];
-        for (let pi = 0; pi < newParagraphs.length; pi++) {
-          if (pi > 0) pos++;
-          const para = newParagraphs[pi];
-          const children = para.getChildren() as TextNode[];
-          for (const child of children) {
-            const len = child.getTextContentSize();
-            if (targetPos >= pos && targetPos <= pos + len) {
-              (child as TextNode).select(targetPos - pos, targetPos - pos);
-              return;
-            }
-            pos += len;
+        for (const child of para.getChildren()) {
+          const len = child.getTextContentSize();
+          if ($isTextNode(child) && targetPos >= pos && targetPos <= pos + len) {
+            child.select(targetPos - pos, targetPos - pos);
+            return;
           }
+          pos += len;
         }
         // Fallback: select end
-        const lastP = root.getLastChild();
-        if (lastP) lastP.selectEnd();
+        para.selectEnd();
       });
     },
     insertMentionPill: (data: MentionPillData, searchStartPos: number) => {

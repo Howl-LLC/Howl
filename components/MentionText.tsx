@@ -1271,8 +1271,10 @@ function renderBlocks(blocks: BlockSegment[], emojiSizeEm: number, keyPrefix: st
           <span key={key} className="block">
             {block.lines.map((ln, li) => (
               <span key={`${key}-${li}`} className="block">
-                {li > 0 && <br />}
-                {renderLine(ln, emojiSizeEm, `${key}-p-${li}`, spoilerReveal, cem, inviteCtx, embedCtx)}
+                {/* Each line is its own block, so no <br> is needed between lines.
+                    An empty line would collapse to zero height — give it a <br>
+                    so a blank line still occupies one line of space. */}
+                {ln === '' ? <br /> : renderLine(ln, emojiSizeEm, `${key}-p-${li}`, spoilerReveal, cem, inviteCtx, embedCtx)}
               </span>
             ))}
           </span>
